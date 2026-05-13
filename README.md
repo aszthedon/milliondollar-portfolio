@@ -1,54 +1,36 @@
-# Million Dollar Ticket Productions
+This is a [Next.js](https://nextjs.org) project bootstrapped with [`create-next-app`](https://nextjs.org/docs/app/api-reference/cli/create-next-app).
 
-Official portfolio and digital agency platform for Million Dollar Ticket Productions.
+## Getting Started
 
-This website serves as the central hub for:
+First, run the development server:
 
-* Creative services
-* Multimedia production
-* Website development
-* Booking system solutions
-* Client projects
-* Digital product showcases
-* Reusable business website templates
+```bash
+npm run dev
+# or
+yarn dev
+# or
+pnpm dev
+# or
+bun dev
+```
 
-## Tech Stack
+Open [http://localhost:3000](http://localhost:3000) with your browser to see the result.
 
-Built with:
+You can start editing the page by modifying `app/page.tsx`. The page auto-updates as you edit the file.
 
-* Next.js
-* React
-* TypeScript
-* Tailwind CSS
-* Supabase
-* Vercel
+This project uses [`next/font`](https://nextjs.org/docs/app/building-your-application/optimizing/fonts) to automatically optimize and load [Geist](https://vercel.com/font), a new font family for Vercel.
 
-## Current Development Goals
+## Learn More
 
-* Build a scalable portfolio platform
-* Create reusable booking website templates
-* Develop admin and client dashboard systems
-* Support multi-business deployments
-* Establish a modern agency workflow using GitHub, Supabase, and Vercel
+To learn more about Next.js, take a look at the following resources:
 
-## Planned Features
+- [Next.js Documentation](https://nextjs.org/docs) - learn about Next.js features and API.
+- [Learn Next.js](https://nextjs.org/learn) - an interactive Next.js tutorial.
 
-* Portfolio showcase
-* Service pages
-* Inquiry/contact forms
-* Booking integrations
-* Client dashboard
-* Admin dashboard
-* CMS-style content editing
-* Social media integrations
-* Reusable template architecture
+You can check out [the Next.js GitHub repository](https://github.com/vercel/next.js) - your feedback and contributions are welcome!
 
-## Deployment
+## Deploy on Vercel
 
-This project will be deployed using Vercel and connected to:
+The easiest way to deploy your Next.js app is to use the [Vercel Platform](https://vercel.com/new?utm_medium=default-template&filter=next.js&utm_source=create-next-app&utm_campaign=create-next-app-readme) from the creators of Next.js.
 
-milliondollarticketproductions.com
-
-## Author
-
-Asia Z. Donald
+Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/building-your-application/deploying) for more details.
