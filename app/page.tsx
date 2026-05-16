@@ -1,33 +1,29 @@
 import Navbar from "@/components/Navbar";
+import Footer from "@/components/Footer";
+
+import Hero from "@/components/sections/Hero";
+import Services from "@/components/sections/Services";
+import FeaturedWork from "@/components/sections/FeaturedWork";
+import CTA from "@/components/sections/CTA";
 
 export default function Home() {
   return (
-    <main className="min-h-screen bg-black text-white">
+    <main className="relative overflow-hidden bg-black text-white">
+      <div className="absolute left-[-200px] top-[300px] h-[500px] w-[500px] rounded-full bg-purple-500/10 blur-3xl" />
+
+      <div className="absolute right-[-200px] top-[900px] h-[500px] w-[500px] rounded-full bg-blue-500/10 blur-3xl" />
+
       <Navbar />
-      <section className="flex min-h-screen flex-col items-center justify-center px-6 text-center">
-        <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
-          Million Dollar Ticket Productions
-        </p>
 
-        <h1 className="max-w-4xl text-5xl font-bold leading-tight md:text-7xl">
-          Premium Digital Experiences For Modern Brands
-        </h1>
+      <Hero />
 
-        <p className="mt-6 max-w-2xl text-lg text-zinc-300">
-          Websites, booking systems, multimedia production, and scalable
-          digital platforms designed to elevate ambitious businesses.
-        </p>
+      <Services />
 
-        <div className="mt-10 flex gap-4">
-          <button className="rounded-full bg-white px-6 py-3 text-black transition hover:bg-zinc-200">
-            View Services
-          </button>
+      <FeaturedWork />
 
-          <button className="rounded-full border border-white px-6 py-3 transition hover:bg-white hover:text-black">
-            Contact Us
-          </button>
-        </div>
-      </section>
+      <CTA />
+
+      <Footer />
     </main>
   );
 }
