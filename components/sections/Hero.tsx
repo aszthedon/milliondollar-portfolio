@@ -1,7 +1,55 @@
+"use client";
+
+import { useEffect, useState } from "react";
+
 import Container from "../Container";
 import Button from "../ui/Button";
 
+import { supabase } from "@/lib/supabase";
+
 export default function Hero() {
+  const [businessName, setBusinessName] =
+    useState("Loading business...");
+
+  const [heroHeading, setHeroHeading] =
+    useState("Loading heading...");
+
+  const [heroDescription, setHeroDescription] =
+    useState("Loading description...");
+
+  async function fetchSettings() {
+    const { data, error } = await supabase
+      .from("site_settings")
+      .select("*");
+
+    console.log("SITE SETTINGS OBJECT:", data[0]);
+    console.log("SITE SETTINGS ERROR:", error);
+
+    if (error) {
+      return;
+    }
+
+    if (data && data.length > 0) {
+      const settings = data[0];
+
+      setBusinessName(
+        settings.business_name || ""
+      );
+
+      setHeroHeading(
+        settings.hero_heading || ""
+      );
+
+      setHeroDescription(
+        settings.hero_description || ""
+      );
+    }
+  }
+
+  useEffect(() => {
+    fetchSettings();
+  }, []);
+
   return (
     <section
       id="home"
@@ -16,17 +64,15 @@ export default function Hero() {
       <Container>
         <div className="relative z-10 max-w-4xl py-40">
           <p className="mb-6 text-sm uppercase tracking-[0.4em] text-zinc-400">
-            Million Dollar Ticket Productions
+            {businessName}
           </p>
 
           <h1 className="text-5xl font-bold leading-tight md:text-7xl">
-            Premium Digital Experiences For Ambitious Brands
+            {heroHeading}
           </h1>
 
           <p className="mt-8 max-w-2xl text-lg leading-relaxed text-zinc-300">
-            We build modern websites, booking systems, multimedia experiences,
-            and scalable digital platforms designed to elevate businesses into
-            unforgettable brands.
+            {heroDescription}
           </p>
 
           <div className="mt-10 flex flex-wrap gap-4">
