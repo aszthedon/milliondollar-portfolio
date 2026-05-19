@@ -1,68 +1,44 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
+
+import jsPDF from "jspdf";
 
 import { supabase } from "@/lib/supabase";
 
 interface Booking {
   id: number;
-  service_id: number;
   booking_date: string;
   booking_time: string;
-  notes: string;
+  payment_status: string;
   status: string;
+  customer_email: string;
+  notes: string;
+  service_id: number;
 }
 
-interface Service {
-  id: number;
-  title: string;
-}
-
-export default function BookingsPage() {
-  const [bookings, setBookings] = useState<
-    Booking[]
-  >([]);
-
-  const [services, setServices] = useState<
-    Service[]
-  >([]);
+export default function DashboardBookingsPage() {
+  const [bookings, setBookings] =
+    useState<Booking[]>([]);
 
   async function fetchBookings() {
     const { data } = await supabase
       .from("bookings")
       .select("*")
-      .order("id", { ascending: false });
+      .order("id", {
+        ascending: false,
+      });
 
     if (data) {
       setBookings(data);
     }
   }
 
-  async function fetchServices() {
-    const { data } = await supabase
-      .from("services")
-      .select("*");
-
-    if (data) {
-      setServices(data);
-    }
-  }
-
-  useEffect(() => {
-    fetchBookings();
-    fetchServices();
-  }, []);
-
-  function getServiceName(id: number) {
-    const service = services.find(
-      (service) => service.id === id
-    );
-
-    return service?.title || "Unknown Service";
-  }
-
   async function updateStatus(
-    id: number,
+    bookingId: number,
     status: string
   ) {
     await supabase
@@ -70,16 +46,82 @@ export default function BookingsPage() {
       .update({
         status,
       })
-      .eq("id", id);
+      .eq("id", bookingId);
 
     fetchBookings();
   }
 
+  function downloadInvoice(
+    booking: Booking
+  ) {
+    const doc = new jsPDF();
+
+    doc.setFontSize(24);
+
+    doc.text(
+      "Invoice",
+      20,
+      30
+    );
+
+    doc.setFontSize(14);
+
+    doc.text(
+      `Client: ${booking.customer_email}`,
+      20,
+      60
+    );
+
+    doc.text(
+      `Booking Date: ${booking.booking_date}`,
+      20,
+      80
+    );
+
+    doc.text(
+      `Booking Time: ${booking.booking_time}`,
+      20,
+      100
+    );
+
+    doc.text(
+      `Payment Status: ${booking.payment_status}`,
+      20,
+      120
+    );
+
+    doc.text(
+      `Booking Status: ${booking.status}`,
+      20,
+      140
+    );
+
+    doc.text(
+      `Notes: ${booking.notes}`,
+      20,
+      170
+    );
+
+    doc.save(
+      `invoice-${booking.id}.pdf`
+    );
+  }
+
+  useEffect(() => {
+    fetchBookings();
+  }, []);
+
   return (
     <main className="min-h-screen bg-black p-10 text-white">
-      <h1 className="mb-10 text-5xl font-bold">
-        Booking Requests
-      </h1>
+      <div className="mb-12">
+        <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
+          Dashboard
+        </p>
+
+        <h1 className="text-5xl font-bold">
+          Booking Management
+        </h1>
+      </div>
 
       <div className="grid gap-6">
         {bookings.map((booking) => (
@@ -87,34 +129,53 @@ export default function BookingsPage() {
             key={booking.id}
             className="rounded-3xl border border-white/10 bg-white/5 p-8"
           >
-            <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+            <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
               <div>
-                <p className="mb-2 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                  {getServiceName(
-                    booking.service_id
-                  )}
-                </p>
-
                 <h2 className="text-3xl font-semibold">
-                  {booking.booking_date}
+                  {
+                    booking.customer_email
+                  }
                 </h2>
 
                 <p className="mt-2 text-zinc-400">
-                  {booking.booking_time}
+                  {
+                    booking.booking_date
+                  }{" "}
+                  at{" "}
+                  {
+                    booking.booking_time
+                  }
                 </p>
 
                 <p className="mt-6 whitespace-pre-wrap text-zinc-300">
                   {booking.notes}
                 </p>
-
-                <div className="mt-6">
-                  <span className="rounded-full border border-white/10 px-4 py-2 text-sm">
-                    {booking.status}
-                  </span>
-                </div>
               </div>
 
-              <div className="flex gap-3">
+              <div className="flex flex-col gap-3">
+                <div className="rounded-full border border-white/10 px-4 py-2 text-sm">
+                  Status:{" "}
+                  {booking.status}
+                </div>
+
+                <div className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400">
+                  Payment:{" "}
+                  {
+                    booking.payment_status
+                  }
+                </div>
+
+                <button
+                  onClick={() =>
+                    downloadInvoice(
+                      booking
+                    )
+                  }
+                  className="rounded-full border border-white/10 px-4 py-2 text-sm transition hover:bg-white hover:text-black"
+                >
+                  Download Invoice
+                </button>
+
                 <button
                   onClick={() =>
                     updateStatus(
@@ -122,9 +183,21 @@ export default function BookingsPage() {
                       "approved"
                     )
                   }
-                  className="rounded-full bg-green-500 px-5 py-3 text-black"
+                  className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400 transition hover:bg-green-500 hover:text-white"
                 >
                   Approve
+                </button>
+
+                <button
+                  onClick={() =>
+                    updateStatus(
+                      booking.id,
+                      "completed"
+                    )
+                  }
+                  className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white"
+                >
+                  Mark Completed
                 </button>
 
                 <button
@@ -134,26 +207,22 @@ export default function BookingsPage() {
                       "rejected"
                     )
                   }
-                  className="rounded-full bg-red-500 px-5 py-3 text-white"
+                  className="rounded-full border border-red-500 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500 hover:text-white"
                 >
                   Reject
-                </button>
-
-                <button
-                  onClick={() =>
-                    updateStatus(
-                      booking.id,
-                      "pending"
-                    )
-                  }
-                  className="rounded-full bg-yellow-500 px-5 py-3 text-black"
-                >
-                  Pending
                 </button>
               </div>
             </div>
           </div>
         ))}
+
+        {bookings.length === 0 && (
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
+            <p className="text-zinc-400">
+              No bookings found.
+            </p>
+          </div>
+        )}
       </div>
     </main>
   );

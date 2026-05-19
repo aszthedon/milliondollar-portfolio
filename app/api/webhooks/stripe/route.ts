@@ -1,5 +1,7 @@
 import Stripe from "stripe";
 
+import { sendBookingEmail } from "@/lib/email";
+
 const stripe = new Stripe(
   process.env.STRIPE_SECRET_KEY as string
 );
@@ -53,10 +55,53 @@ export async function POST(
       session.id
     );
 
-    // future:
-    // update booking
-    // send email
-    // generate invoice
+    const bookingId =
+      session.metadata?.bookingId;
+
+    if (bookingId) {
+      const { createClient } =
+        await import(
+          "@supabase/supabase-js"
+        );
+
+      const supabase = createClient(
+        process.env
+          .NEXT_PUBLIC_SUPABASE_URL as string,
+
+        process.env
+          .SUPABASE_SERVICE_ROLE_KEY as string
+      );
+
+      await supabase
+        .from("bookings")
+        .update({
+          payment_status: "paid",
+        })
+        .eq("id", bookingId);
+
+      console.log(
+        "BOOKING MARKED PAID:",
+        bookingId
+      );
+
+      const booking =
+        await supabase
+          .from("bookings")
+          .select("*")
+          .eq("id", bookingId)
+          .single();
+
+      if (
+        booking.data?.customer_email
+      ) {
+        await sendBookingEmail(
+          booking.data
+            .customer_email,
+
+          "Your Booking"
+        );
+      }
+    }
   }
 
   return new Response("Success", {

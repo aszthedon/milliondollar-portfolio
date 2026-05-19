@@ -57,6 +57,9 @@ export default function Booking() {
   const [bookingTime, setBookingTime] =
     useState("");
 
+  const [customerEmail, setCustomerEmail] =
+    useState("");
+
   const [notes, setNotes] = useState("");
 
   async function fetchServices() {
@@ -198,7 +201,8 @@ export default function Booking() {
       !selectedService ||
       !selectedVariation ||
       !bookingDate ||
-      !bookingTime
+      !bookingTime ||
+      !customerEmail
     ) {
       alert("Please complete all fields.");
       return;
@@ -215,6 +219,9 @@ export default function Booking() {
       .from("bookings")
       .insert({
         client_id: user?.id || null,
+
+        customer_email:
+          customerEmail,
 
         service_id:
           Number(selectedService),
@@ -255,6 +262,7 @@ ${notes}
     setSelectedVariation("");
     setBookingDate(null);
     setBookingTime("");
+    setCustomerEmail("");
     setNotes("");
 
     return bookingData;
@@ -367,6 +375,18 @@ ${notes}
                 </option>
               ))}
             </select>
+
+            <input
+              type="email"
+              placeholder="Email Address"
+              value={customerEmail}
+              onChange={(e) =>
+                setCustomerEmail(
+                  e.target.value
+                )
+              }
+              className="rounded-xl border border-white/10 bg-black px-4 py-3"
+            />
 
             <textarea
               placeholder="Additional Notes"
