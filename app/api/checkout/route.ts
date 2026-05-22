@@ -59,6 +59,37 @@ export async function POST(
     }
 
     const {
+      data: existingBooking,
+    } = await supabaseAdmin
+      .from("bookings")
+      .select("id")
+      .eq(
+        "booking_date",
+        booking_date
+      )
+      .eq(
+        "booking_time",
+        booking_time
+      )
+      .neq(
+        "status",
+        "cancelled"
+      )
+      .maybeSingle();
+
+    if (existingBooking) {
+      return NextResponse.json(
+        {
+          error:
+            "This time slot has already been booked.",
+        },
+        {
+          status: 409,
+        }
+      );
+    }
+
+    const {
       data: booking,
       error: bookingError,
     } =
@@ -104,6 +135,18 @@ export async function POST(
         }
       );
     }
+
+    await supabaseAdmin
+      .from("availability")
+      .delete()
+      .eq(
+        "available_date",
+        booking_date
+      )
+      .eq(
+        "available_time",
+        booking_time
+      );
 
     let meetingLink =
       null;

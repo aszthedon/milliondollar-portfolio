@@ -69,6 +69,9 @@ export default function Booking() {
   const [notes, setNotes] =
     useState("");
 
+  const [loading, setLoading] =
+    useState(false);
+
   async function fetchServices() {
     const { data } = await supabase
       .from("services")
@@ -162,6 +165,8 @@ export default function Booking() {
   }
 
   async function startCheckout() {
+    if (loading) return;
+
     if (
       !selectedService ||
       !selectedVariation ||
@@ -184,112 +189,105 @@ export default function Booking() {
       return;
     }
 
-    console.log(
-      "STARTING CHECKOUT"
-    );
+    setLoading(true);
 
     const {
       data: { user },
     } = await supabase.auth.getUser();
 
-    const response = await fetch(
-      "/api/checkout",
-      {
-        method: "POST",
-
-        headers: {
-          "Content-Type":
-            "application/json",
-        },
-
-        body: JSON.stringify({
-          service_name:
-            selectedVariationData.variation_name,
-
-          price:
-            selectedVariationData.price,
-
-          customer_email:
-            customerEmail,
-
-          booking_date:
-            formattedBookingDate,
-
-          booking_time:
-            bookingTime,
-
-          notes,
-
-          timezone:
-            Intl.DateTimeFormat()
-              .resolvedOptions()
-              .timeZone,
-
-          client_id:
-            user?.id || null,
-        }),
-      }
-    );
-
-    console.log(
-      "RESPONSE STATUS:",
-      response.status
-    );
-
-    const rawResponse =
-      await response.text();
-
-    console.log(
-      "RAW RESPONSE:",
-      rawResponse
-    );
-
-    let data;
-
     try {
-      data =
-        JSON.parse(
+      const response = await fetch(
+        "/api/checkout",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body: JSON.stringify({
+            service_name:
+              selectedVariationData.variation_name,
+
+            price:
+              selectedVariationData.price,
+
+            customer_email:
+              customerEmail,
+
+            booking_date:
+              formattedBookingDate,
+
+            booking_time:
+              bookingTime,
+
+            notes,
+
+            timezone:
+              Intl.DateTimeFormat()
+                .resolvedOptions()
+                .timeZone,
+
+            client_id:
+              user?.id || null,
+          }),
+        }
+      );
+
+      const rawResponse =
+        await response.text();
+
+      let data;
+
+      try {
+        data =
+          JSON.parse(
+            rawResponse
+          );
+      } catch (error) {
+        console.error(
+          "JSON PARSE ERROR:",
+          error
+        );
+
+        console.error(
+          "RAW RESPONSE:",
           rawResponse
         );
-    } catch (error) {
-      console.error(
-        "JSON PARSE ERROR:",
-        error
-      );
 
-      console.error(
-        "RAW RESPONSE:",
-        rawResponse
-      );
+        setLoading(false);
 
-      alert(
-        "Server returned invalid JSON."
-      );
+        alert(
+          "Server returned invalid JSON."
+        );
 
-      return;
-    }
+        return;
+      }
 
-    console.log(
-      "CHECKOUT RESPONSE:",
-      data
-    );
+      if (data.url) {
+        window.location.href =
+          data.url;
 
-    if (data.url) {
-      console.log(
-        "REDIRECTING TO:",
-        data.url
-      );
+        return;
+      }
 
-      window.location.href =
-        data.url;
-    } else {
-      console.log(
-        "NO URL RETURNED"
-      );
+      setLoading(false);
 
       alert(
         data.error ||
           "Checkout failed."
+      );
+    } catch (error) {
+      console.error(
+        "CHECKOUT ERROR:",
+        error
+      );
+
+      setLoading(false);
+
+      alert(
+        "Something went wrong."
       );
     }
   }
@@ -445,9 +443,12 @@ export default function Booking() {
               onClick={
                 startCheckout
               }
-              className="rounded-full bg-white px-6 py-3 text-black"
+              disabled={loading}
+              className="rounded-full bg-white px-6 py-3 text-black transition disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Continue To Payment
+              {loading
+                ? "Redirecting..."
+                : "Continue To Payment"}
             </button>
           </div>
         </Container>
