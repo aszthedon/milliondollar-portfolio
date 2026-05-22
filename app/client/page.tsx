@@ -16,6 +16,7 @@ interface Booking {
   notes: string;
   service_id: number;
   customer_email: string;
+  meeting_link: string;
 }
 
 interface ClientFile {
@@ -299,6 +300,18 @@ export default function ClientPage() {
                   <p className="mt-6 whitespace-pre-wrap text-zinc-300">
                     {booking.notes}
                   </p>
+
+                  {booking.meeting_link && (
+                    <a
+                      href={
+                        booking.meeting_link
+                      }
+                      target="_blank"
+                      className="mt-4 inline-block rounded-full border border-green-500 px-4 py-2 text-sm text-green-400 transition hover:bg-green-500 hover:text-white"
+                    >
+                      Join Meeting
+                    </a>
+                  )}
 
                   {bookingFiles.length >
                     0 && (

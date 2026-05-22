@@ -32,12 +32,12 @@ interface Availability {
   id: number;
   available_date: string;
   available_time: string;
+  timezone: string;
 }
 
 export default function Booking() {
-  const [services, setServices] = useState<
-    Service[]
-  >([]);
+  const [services, setServices] =
+    useState<Service[]>([]);
 
   const [variations, setVariations] =
     useState<Variation[]>([]);
@@ -45,11 +45,15 @@ export default function Booking() {
   const [availability, setAvailability] =
     useState<Availability[]>([]);
 
-  const [selectedService, setSelectedService] =
-    useState("");
+  const [
+    selectedService,
+    setSelectedService,
+  ] = useState("");
 
-  const [selectedVariation, setSelectedVariation] =
-    useState("");
+  const [
+    selectedVariation,
+    setSelectedVariation,
+  ] = useState("");
 
   const [bookingDate, setBookingDate] =
     useState<Date | null>(null);
@@ -57,10 +61,13 @@ export default function Booking() {
   const [bookingTime, setBookingTime] =
     useState("");
 
-  const [customerEmail, setCustomerEmail] =
-    useState("");
+  const [
+    customerEmail,
+    setCustomerEmail,
+  ] = useState("");
 
-  const [notes, setNotes] = useState("");
+  const [notes, setNotes] =
+    useState("");
 
   async function fetchServices() {
     const { data } = await supabase
@@ -130,23 +137,60 @@ export default function Booking() {
           .split("T")[0]
       : "";
 
-  const availableTimes = availability.filter(
-    (slot) =>
-      slot.available_date ===
-      formattedBookingDate
-  );
+  const availableTimes =
+    availability.filter(
+      (slot) =>
+        slot.available_date ===
+        formattedBookingDate
+    );
 
-  async function startCheckout(
-    bookingId: number
+  function formatTime(
+    time: string
   ) {
+    const date =
+      new Date(
+        `1970-01-01T${time}`
+      );
+
+    return date.toLocaleTimeString(
+      [],
+      {
+        hour: "numeric",
+        minute: "2-digit",
+      }
+    );
+  }
+
+  async function startCheckout() {
+    if (
+      !selectedService ||
+      !selectedVariation ||
+      !bookingDate ||
+      !bookingTime ||
+      !customerEmail
+    ) {
+      alert(
+        "Please complete all fields."
+      );
+
+      return;
+    }
+
     if (!selectedVariationData) {
-      alert("Please select a variation.");
+      alert(
+        "Please select a variation."
+      );
+
       return;
     }
 
     console.log(
       "STARTING CHECKOUT"
     );
+
+    const {
+      data: { user },
+    } = await supabase.auth.getUser();
 
     const response = await fetch(
       "/api/checkout",
@@ -159,13 +203,30 @@ export default function Booking() {
         },
 
         body: JSON.stringify({
-          bookingId,
-
-          serviceName:
+          service_name:
             selectedVariationData.variation_name,
 
-          amount:
+          price:
             selectedVariationData.price,
+
+          customer_email:
+            customerEmail,
+
+          booking_date:
+            formattedBookingDate,
+
+          booking_time:
+            bookingTime,
+
+          notes,
+
+          timezone:
+            Intl.DateTimeFormat()
+              .resolvedOptions()
+              .timeZone,
+
+          client_id:
+            user?.id || null,
         }),
       }
     );
@@ -175,7 +236,38 @@ export default function Booking() {
       response.status
     );
 
-    const data = await response.json();
+    const rawResponse =
+      await response.text();
+
+    console.log(
+      "RAW RESPONSE:",
+      rawResponse
+    );
+
+    let data;
+
+    try {
+      data =
+        JSON.parse(
+          rawResponse
+        );
+    } catch (error) {
+      console.error(
+        "JSON PARSE ERROR:",
+        error
+      );
+
+      console.error(
+        "RAW RESPONSE:",
+        rawResponse
+      );
+
+      alert(
+        "Server returned invalid JSON."
+      );
+
+      return;
+    }
 
     console.log(
       "CHECKOUT RESPONSE:",
@@ -188,84 +280,18 @@ export default function Booking() {
         data.url
       );
 
-      window.location.href = data.url;
+      window.location.href =
+        data.url;
     } else {
       console.log(
         "NO URL RETURNED"
       );
+
+      alert(
+        data.error ||
+          "Checkout failed."
+      );
     }
-  }
-
-  async function submitBooking() {
-    if (
-      !selectedService ||
-      !selectedVariation ||
-      !bookingDate ||
-      !bookingTime ||
-      !customerEmail
-    ) {
-      alert("Please complete all fields.");
-      return;
-    }
-
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    const {
-      data: bookingData,
-      error,
-    } = await supabase
-      .from("bookings")
-      .insert({
-        client_id: user?.id || null,
-
-        customer_email:
-          customerEmail,
-
-        service_id:
-          Number(selectedService),
-
-        booking_date:
-          formattedBookingDate,
-
-        booking_time: bookingTime,
-
-        notes: `
-Variation ID: ${selectedVariation}
-
-${notes}
-        `,
-      })
-      .select()
-      .single();
-
-    if (error) {
-      alert(error.message);
-      return;
-    }
-
-    await supabase
-      .from("availability")
-      .delete()
-      .eq(
-        "available_date",
-        formattedBookingDate
-      )
-      .eq("available_time", bookingTime);
-
-    alert("Booking request submitted!");
-
-    fetchAvailability();
-
-    setSelectedService("");
-    setSelectedVariation("");
-    setBookingDate(null);
-    setBookingTime("");
-    setCustomerEmail("");
-    setNotes("");
-
-    return bookingData;
   }
 
   return (
@@ -299,14 +325,16 @@ ${notes}
                 Select Service
               </option>
 
-              {services.map((service) => (
-                <option
-                  key={service.id}
-                  value={service.id}
-                >
-                  {service.title}
-                </option>
-              ))}
+              {services.map(
+                (service) => (
+                  <option
+                    key={service.id}
+                    value={service.id}
+                  >
+                    {service.title}
+                  </option>
+                )
+              )}
             </select>
 
             <select
@@ -328,7 +356,9 @@ ${notes}
                     key={variation.id}
                     value={variation.id}
                   >
-                    {variation.variation_name}
+                    {
+                      variation.variation_name
+                    }
                     {" — $"}
                     {variation.price}
                   </option>
@@ -339,10 +369,14 @@ ${notes}
             <div className="rounded-3xl border border-white/10 bg-black p-4">
               <Calendar
                 onChange={(value) =>
-                  setBookingDate(value as Date)
+                  setBookingDate(
+                    value as Date
+                  )
                 }
                 value={bookingDate}
-                tileDisabled={({ date }) => {
+                tileDisabled={({
+                  date,
+                }) => {
                   const formatted =
                     date
                       .toISOString()
@@ -358,7 +392,9 @@ ${notes}
             <select
               value={bookingTime}
               onChange={(e) =>
-                setBookingTime(e.target.value)
+                setBookingTime(
+                  e.target.value
+                )
               }
               className="rounded-xl border border-white/10 bg-black px-4 py-3"
             >
@@ -366,14 +402,20 @@ ${notes}
                 Select Time
               </option>
 
-              {availableTimes.map((slot) => (
-                <option
-                  key={slot.id}
-                  value={slot.available_time}
-                >
-                  {slot.available_time}
-                </option>
-              ))}
+              {availableTimes.map(
+                (slot) => (
+                  <option
+                    key={slot.id}
+                    value={
+                      slot.available_time
+                    }
+                  >
+                    {formatTime(
+                      slot.available_time
+                    )}
+                  </option>
+                )
+              )}
             </select>
 
             <input
@@ -392,22 +434,17 @@ ${notes}
               placeholder="Additional Notes"
               value={notes}
               onChange={(e) =>
-                setNotes(e.target.value)
+                setNotes(
+                  e.target.value
+                )
               }
               className="rounded-xl border border-white/10 bg-black px-4 py-3"
             />
 
             <button
-              onClick={async () => {
-                const booking =
-                  await submitBooking();
-
-                if (booking) {
-                  await startCheckout(
-                    booking.id
-                  );
-                }
-              }}
+              onClick={
+                startCheckout
+              }
               className="rounded-full bg-white px-6 py-3 text-black"
             >
               Continue To Payment

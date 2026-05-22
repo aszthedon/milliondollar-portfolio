@@ -2,82 +2,255 @@ import { NextResponse } from "next/server";
 
 import Stripe from "stripe";
 
-const stripe = new Stripe(
-  process.env.STRIPE_SECRET_KEY as string
-);
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-console.log(
-  "STRIPE KEY EXISTS:",
-  !!process.env.STRIPE_SECRET_KEY
+import { createCalendarEvent } from "@/lib/createCalendarEvent";
+
+import { sendBookingEmail } from "@/lib/sendBookingEmail";
+
+const stripe = new Stripe(
+  process.env
+    .STRIPE_SECRET_KEY!,
+  {
+    apiVersion:
+      "2026-04-22.dahlia",
+  }
 );
 
 export async function POST(
   request: Request
 ) {
   try {
-    const body = await request.json();
+    const body =
+      await request.json();
 
     console.log(
       "CHECKOUT BODY:",
       body
     );
 
-    const baseUrl =
-      process.env
-        .NEXT_PUBLIC_SITE_URL;
+    const {
+      service_name,
+      price,
+      customer_email,
+      booking_date,
+      booking_time,
+      notes,
+      timezone,
+      client_id,
+    } = body;
 
-    const session =
-      await stripe.checkout.sessions.create({
-        payment_method_types: ["card"],
-
-        mode: "payment",
-
-        metadata: {
-          bookingId: body.bookingId,
+    if (
+      !service_name ||
+      !price ||
+      !customer_email ||
+      !booking_date ||
+      !booking_time
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Missing required fields",
         },
+        {
+          status: 400,
+        }
+      );
+    }
 
-        line_items: [
+    const {
+      data: booking,
+      error: bookingError,
+    } =
+      await supabaseAdmin
+        .from("bookings")
+        .insert({
+          customer_email,
+
+          booking_date,
+
+          booking_time,
+
+          payment_status:
+            "pending",
+
+          status: "pending",
+
+          notes,
+
+          timezone,
+
+          client_id,
+        })
+        .select()
+        .single();
+
+    if (
+      bookingError ||
+      !booking
+    ) {
+      console.error(
+        "BOOKING ERROR:",
+        bookingError
+      );
+
+      return NextResponse.json(
+        {
+          error:
+            "Failed to create booking",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
+
+    let meetingLink =
+      null;
+
+    try {
+      meetingLink =
+        await createCalendarEvent({
+          customerEmail:
+            customer_email,
+
+          bookingDate:
+            booking_date,
+
+          bookingTime:
+            booking_time,
+
+          timezone,
+        });
+
+      console.log(
+        "MEETING LINK:",
+        meetingLink
+      );
+
+      if (meetingLink) {
+        await supabaseAdmin
+          .from("bookings")
+          .update({
+            meeting_link:
+              meetingLink,
+          })
+          .eq(
+            "id",
+            booking.id
+          );
+      }
+    } catch (calendarError) {
+      console.error(
+        "CALENDAR ERROR:",
+        calendarError
+      );
+    }
+
+    sendBookingEmail({
+      customerEmail:
+        customer_email,
+
+      bookingDate:
+        booking_date,
+
+      bookingTime:
+        booking_time,
+
+      timezone,
+
+      meetingLink,
+    }).catch((error) => {
+      console.error(
+        "EMAIL ERROR:",
+        error
+      );
+    });
+
+    try {
+      console.log(
+        "CREATING STRIPE SESSION"
+      );
+
+      const session =
+        await stripe.checkout.sessions.create(
           {
-            price_data: {
-              currency: "usd",
+            payment_method_types:
+              ["card"],
 
-              product_data: {
-                name:
-                  body.serviceName ||
-                  "Booking Payment",
+            mode: "payment",
+
+            customer_email,
+
+            line_items: [
+              {
+                price_data: {
+                  currency:
+                    "usd",
+
+                  product_data:
+                    {
+                      name:
+                        service_name,
+                    },
+
+                  unit_amount:
+                    Math.round(
+                      price * 100
+                    ),
+                },
+
+                quantity: 1,
               },
+            ],
 
-              unit_amount:
-                body.amount * 100,
+            metadata: {
+              booking_id:
+                booking.id.toString(),
             },
 
-            quantity: 1,
-          },
-        ],
+            success_url:
+              "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/success",
 
-        success_url: `${baseUrl}/success`,
+            cancel_url:
+              "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/cancel",
+          }
+        );
 
-        cancel_url: `${baseUrl}/cancel`,
+      console.log(
+        "SESSION URL:",
+        session.url
+      );
+
+      return NextResponse.json({
+        url: session.url,
       });
+    } catch (stripeError) {
+      console.error(
+        "STRIPE ERROR:",
+        stripeError
+      );
 
-    console.log(
-      "CHECKOUT SESSION:",
-      session.url
-    );
-
-    return NextResponse.json({
-      url: session.url,
-    });
+      return NextResponse.json(
+        {
+          error:
+            "Stripe checkout failed",
+        },
+        {
+          status: 500,
+        }
+      );
+    }
   } catch (error) {
     console.error(
-      "STRIPE ERROR:",
+      "CHECKOUT ERROR:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Failed to create checkout session",
+          "Internal server error",
       },
       {
         status: 500,
