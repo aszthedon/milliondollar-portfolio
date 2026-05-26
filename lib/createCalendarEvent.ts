@@ -40,7 +40,8 @@ export async function createCalendarEvent({
 
     const event =
       await calendar.events.insert({
-        calendarId: "primary",
+        calendarId:
+          "primary",
 
         conferenceDataVersion: 1,
 
@@ -100,22 +101,36 @@ export async function createCalendarEvent({
 
     const meetingLink =
       event.data
-        .hangoutLink;
+        .hangoutLink ??
+      null;
+
+    const calendarEventId =
+      event.data.id ??
+      null;
 
     console.log(
       "GOOGLE MEET LINK:",
       meetingLink
     );
 
-    return meetingLink;
+    console.log(
+      "GOOGLE EVENT ID:",
+      calendarEventId
+    );
+
+    return {
+      meetingLink,
+      calendarEventId,
+    };
   } catch (error) {
     console.error(
       "GOOGLE CALENDAR ERROR:",
       error
     );
 
-    console.error(error);
-
-    return null;
+    return {
+      meetingLink: null,
+      calendarEventId: null,
+    };
   }
 }

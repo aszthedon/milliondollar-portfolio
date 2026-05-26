@@ -24,13 +24,19 @@ export default function DashboardBookingsPage() {
   const [bookings, setBookings] =
     useState<Booking[]>([]);
 
+  const [loadingId, setLoadingId] =
+    useState<number | null>(
+      null
+    );
+
   async function fetchBookings() {
-    const { data } = await supabase
-      .from("bookings")
-      .select("*")
-      .order("id", {
-        ascending: false,
-      });
+    const { data } =
+      await supabase
+        .from("bookings")
+        .select("*")
+        .order("id", {
+          ascending: false,
+        });
 
     if (data) {
       setBookings(data);
@@ -41,22 +47,109 @@ export default function DashboardBookingsPage() {
     bookingId: number,
     status: string
   ) {
-    await supabase
-      .from("bookings")
-      .update({
-        status,
-      })
-      .eq("id", bookingId);
+    try {
+      setLoadingId(
+        bookingId
+      );
 
-    fetchBookings();
+      if (
+        status ===
+        "rejected"
+      ) {
+        const confirmed =
+          window.confirm(
+            "Reject this booking?"
+          );
+
+        if (!confirmed) {
+          setLoadingId(
+            null
+          );
+
+          return;
+        }
+
+        const response =
+          await fetch(
+            "/api/bookings/cancel",
+            {
+              method:
+                "POST",
+
+              headers: {
+                "Content-Type":
+                  "application/json",
+              },
+
+              body:
+                JSON.stringify(
+                  {
+                    bookingId,
+                  }
+                ),
+            }
+          );
+
+        const data =
+          await response.json();
+
+        if (
+          !response.ok
+        ) {
+          throw new Error(
+            data.error ??
+              "Rejection failed."
+          );
+        }
+
+        await fetchBookings();
+
+        setLoadingId(
+          null
+        );
+
+        return;
+      }
+
+      await supabase
+        .from("bookings")
+        .update({
+          status,
+        })
+        .eq(
+          "id",
+          bookingId
+        );
+
+      await fetchBookings();
+
+      setLoadingId(
+        null
+      );
+    } catch (error) {
+      console.error(
+        error
+      );
+
+      alert(
+        "Action failed."
+      );
+
+      setLoadingId(
+        null
+      );
+    }
   }
 
   function downloadInvoice(
     booking: Booking
   ) {
-    const doc = new jsPDF();
+    const doc =
+      new jsPDF();
 
-    doc.setFontSize(24);
+    doc.setFontSize(
+      24
+    );
 
     doc.text(
       "Invoice",
@@ -64,7 +157,9 @@ export default function DashboardBookingsPage() {
       30
     );
 
-    doc.setFontSize(14);
+    doc.setFontSize(
+      14
+    );
 
     doc.text(
       `Client: ${booking.customer_email}`,
@@ -124,102 +219,127 @@ export default function DashboardBookingsPage() {
       </div>
 
       <div className="grid gap-6">
-        {bookings.map((booking) => (
-          <div
-            key={booking.id}
-            className="rounded-3xl border border-white/10 bg-white/5 p-8"
-          >
-            <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
-              <div>
-                <h2 className="text-3xl font-semibold">
-                  {
-                    booking.customer_email
-                  }
-                </h2>
+        {bookings.map(
+          (booking) => (
+            <div
+              key={
+                booking.id
+              }
+              className="rounded-3xl border border-white/10 bg-white/5 p-8"
+            >
+              <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+                <div>
+                  <h2 className="text-3xl font-semibold">
+                    {
+                      booking.customer_email
+                    }
+                  </h2>
 
-                <p className="mt-2 text-zinc-400">
-                  {
-                    booking.booking_date
-                  }{" "}
-                  at{" "}
-                  {
-                    booking.booking_time
-                  }
-                </p>
+                  <p className="mt-2 text-zinc-400">
+                    {
+                      booking.booking_date
+                    }{" "}
+                    at{" "}
+                    {
+                      booking.booking_time
+                    }
+                  </p>
 
-                <p className="mt-6 whitespace-pre-wrap text-zinc-300">
-                  {booking.notes}
-                </p>
-              </div>
-
-              <div className="flex flex-col gap-3">
-                <div className="rounded-full border border-white/10 px-4 py-2 text-sm">
-                  Status:{" "}
-                  {booking.status}
+                  <p className="mt-6 whitespace-pre-wrap text-zinc-300">
+                    {
+                      booking.notes
+                    }
+                  </p>
                 </div>
 
-                <div className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400">
-                  Payment:{" "}
-                  {
-                    booking.payment_status
-                  }
+                <div className="flex flex-col gap-3">
+                  <div className="rounded-full border border-white/10 px-4 py-2 text-sm">
+                    Status:{" "}
+                    {
+                      booking.status
+                    }
+                  </div>
+
+                  <div className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400">
+                    Payment:{" "}
+                    {
+                      booking.payment_status
+                    }
+                  </div>
+
+                  <button
+                    onClick={() =>
+                      downloadInvoice(
+                        booking
+                      )
+                    }
+                    className="rounded-full border border-white/10 px-4 py-2 text-sm transition hover:bg-white hover:text-black"
+                  >
+                    Download Invoice
+                  </button>
+
+                  <button
+                    disabled={
+                      loadingId ===
+                      booking.id
+                    }
+                    onClick={() =>
+                      updateStatus(
+                        booking.id,
+                        "approved"
+                      )
+                    }
+                    className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400 transition hover:bg-green-500 hover:text-white disabled:opacity-50"
+                  >
+                    Approve
+                  </button>
+
+                  <button
+                    disabled={
+                      loadingId ===
+                      booking.id
+                    }
+                    onClick={() =>
+                      updateStatus(
+                        booking.id,
+                        "completed"
+                      )
+                    }
+                    className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white disabled:opacity-50"
+                  >
+                    Mark Completed
+                  </button>
+
+                  <button
+                    disabled={
+                      loadingId ===
+                      booking.id
+                    }
+                    onClick={() =>
+                      updateStatus(
+                        booking.id,
+                        "rejected"
+                      )
+                    }
+                    className="rounded-full border border-red-500 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
+                  >
+                    {loadingId ===
+                    booking.id
+                      ? "Processing..."
+                      : "Reject"}
+                  </button>
                 </div>
-
-                <button
-                  onClick={() =>
-                    downloadInvoice(
-                      booking
-                    )
-                  }
-                  className="rounded-full border border-white/10 px-4 py-2 text-sm transition hover:bg-white hover:text-black"
-                >
-                  Download Invoice
-                </button>
-
-                <button
-                  onClick={() =>
-                    updateStatus(
-                      booking.id,
-                      "approved"
-                    )
-                  }
-                  className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400 transition hover:bg-green-500 hover:text-white"
-                >
-                  Approve
-                </button>
-
-                <button
-                  onClick={() =>
-                    updateStatus(
-                      booking.id,
-                      "completed"
-                    )
-                  }
-                  className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white"
-                >
-                  Mark Completed
-                </button>
-
-                <button
-                  onClick={() =>
-                    updateStatus(
-                      booking.id,
-                      "rejected"
-                    )
-                  }
-                  className="rounded-full border border-red-500 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500 hover:text-white"
-                >
-                  Reject
-                </button>
               </div>
             </div>
-          </div>
-        ))}
+          )
+        )}
 
-        {bookings.length === 0 && (
+        {bookings.length ===
+          0 && (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
             <p className="text-zinc-400">
-              No bookings found.
+              No bookings
+              found.
             </p>
           </div>
         )}

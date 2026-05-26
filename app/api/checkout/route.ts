@@ -1,16 +1,9 @@
 import { NextResponse } from "next/server";
-
 import Stripe from "stripe";
-
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-import { createCalendarEvent } from "@/lib/createCalendarEvent";
-
-import { sendBookingEmail } from "@/lib/sendBookingEmail";
-
 const stripe = new Stripe(
-  process.env
-    .STRIPE_SECRET_KEY!,
+  process.env.STRIPE_SECRET_KEY!,
   {
     apiVersion:
       "2026-04-22.dahlia",
@@ -24,11 +17,6 @@ export async function POST(
     const body =
       await request.json();
 
-    console.log(
-      "CHECKOUT BODY:",
-      body
-    );
-
     const {
       service_name,
       price,
@@ -39,24 +27,6 @@ export async function POST(
       timezone,
       client_id,
     } = body;
-
-    if (
-      !service_name ||
-      !price ||
-      !customer_email ||
-      !booking_date ||
-      !booking_time
-    ) {
-      return NextResponse.json(
-        {
-          error:
-            "Missing required fields",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
 
     const {
       data: existingBooking,
@@ -81,7 +51,7 @@ export async function POST(
       return NextResponse.json(
         {
           error:
-            "This time slot has already been booked.",
+            "This slot is already booked.",
         },
         {
           status: 409,
@@ -91,44 +61,31 @@ export async function POST(
 
     const {
       data: booking,
-      error: bookingError,
+      error,
     } =
       await supabaseAdmin
         .from("bookings")
         .insert({
           customer_email,
-
           booking_date,
-
           booking_time,
-
           payment_status:
             "pending",
-
           status: "pending",
-
           notes,
-
           timezone,
-
           client_id,
         })
         .select()
         .single();
 
-    if (
-      bookingError ||
-      !booking
-    ) {
-      console.error(
-        "BOOKING ERROR:",
-        bookingError
-      );
+    if (error || !booking) {
+      console.error(error);
 
       return NextResponse.json(
         {
           error:
-            "Failed to create booking",
+            "Booking creation failed.",
         },
         {
           status: 500,
@@ -148,152 +105,61 @@ export async function POST(
         booking_time
       );
 
-    let meetingLink =
-      null;
+    const session =
+      await stripe.checkout.sessions.create(
+        {
+          mode: "payment",
 
-    try {
-      meetingLink =
-        await createCalendarEvent({
-          customerEmail:
-            customer_email,
+          customer_email,
 
-          bookingDate:
-            booking_date,
+          payment_method_types:
+            ["card"],
 
-          bookingTime:
-            booking_time,
+          line_items: [
+            {
+              price_data: {
+                currency:
+                  "usd",
 
-          timezone,
-        });
+                product_data:
+                  {
+                    name:
+                      service_name,
+                  },
 
-      console.log(
-        "MEETING LINK:",
-        meetingLink
-      );
-
-      if (meetingLink) {
-        await supabaseAdmin
-          .from("bookings")
-          .update({
-            meeting_link:
-              meetingLink,
-          })
-          .eq(
-            "id",
-            booking.id
-          );
-      }
-    } catch (calendarError) {
-      console.error(
-        "CALENDAR ERROR:",
-        calendarError
-      );
-    }
-
-    sendBookingEmail({
-      customerEmail:
-        customer_email,
-
-      bookingDate:
-        booking_date,
-
-      bookingTime:
-        booking_time,
-
-      timezone,
-
-      meetingLink,
-    }).catch((error) => {
-      console.error(
-        "EMAIL ERROR:",
-        error
-      );
-    });
-
-    try {
-      console.log(
-        "CREATING STRIPE SESSION"
-      );
-
-      const session =
-        await stripe.checkout.sessions.create(
-          {
-            payment_method_types:
-              ["card"],
-
-            mode: "payment",
-
-            customer_email,
-
-            line_items: [
-              {
-                price_data: {
-                  currency:
-                    "usd",
-
-                  product_data:
-                    {
-                      name:
-                        service_name,
-                    },
-
-                  unit_amount:
-                    Math.round(
-                      price * 100
-                    ),
-                },
-
-                quantity: 1,
+                unit_amount:
+                  Math.round(
+                    price * 100
+                  ),
               },
-            ],
 
-            metadata: {
-              booking_id:
-                booking.id.toString(),
+              quantity: 1,
             },
+          ],
 
-            success_url:
-              "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/success",
+          metadata: {
+            bookingId:
+              booking.id.toString(),
+          },
 
-            cancel_url:
-              "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/cancel",
-          }
-        );
+          success_url:
+            "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/success",
 
-      console.log(
-        "SESSION URL:",
-        session.url
-      );
-
-      return NextResponse.json({
-        url: session.url,
-      });
-    } catch (stripeError) {
-      console.error(
-        "STRIPE ERROR:",
-        stripeError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Stripe checkout failed",
-        },
-        {
-          status: 500,
+          cancel_url:
+            "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/cancel",
         }
       );
-    }
+
+    return NextResponse.json({
+      url: session.url,
+    });
   } catch (error) {
-    console.error(
-      "CHECKOUT ERROR:",
-      error
-    );
+    console.error(error);
 
     return NextResponse.json(
       {
         error:
-          "Internal server error",
+          "Checkout failed.",
       },
       {
         status: 500,
