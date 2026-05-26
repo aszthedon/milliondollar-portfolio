@@ -171,61 +171,61 @@ export default function ClientPage() {
   }
 
   async function rescheduleBooking(
-    booking: Booking
+  booking: Booking
+) {
+  if (
+    !newDate ||
+    !newTime
   ) {
+    alert(
+      "Select a new date and time."
+    );
+
+    return;
+  }
+
+  try {
+    setLoadingId(
+      booking.id
+    );
+
+    const response =
+      await fetch(
+        "/api/bookings/reschedule",
+        {
+          method:
+            "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+
+          body:
+            JSON.stringify(
+              {
+                bookingId:
+                  booking.id,
+
+                newDate,
+
+                newTime,
+              }
+            ),
+        }
+      );
+
+    const data =
+      await response.json();
+
     if (
-      !newDate ||
-      !newTime
+      !response.ok
     ) {
-      alert(
-        "Select a new date and time."
+      throw new Error(
+        data.error ??
+          "Reschedule failed."
       );
-
-      return;
     }
-
-    await supabase
-      .from(
-        "availability"
-      )
-      .insert({
-        available_date:
-          booking.booking_date,
-
-        available_time:
-          booking.booking_time,
-      });
-
-    await supabase
-      .from(
-        "availability"
-      )
-      .delete()
-      .eq(
-        "available_date",
-        newDate
-      )
-      .eq(
-        "available_time",
-        newTime
-      );
-
-    await supabase
-      .from("bookings")
-      .update({
-        booking_date:
-          newDate,
-
-        booking_time:
-          newTime,
-
-        status:
-          "rescheduled",
-      })
-      .eq(
-        "id",
-        booking.id
-      );
 
     alert(
       "Booking rescheduled!"
@@ -234,8 +234,28 @@ export default function ClientPage() {
     setNewDate("");
     setNewTime("");
 
-    fetchBookings();
+    await fetchBookings();
+
+    setLoadingId(
+      null
+    );
+  } catch (error) {
+    console.error(
+      error
+    );
+
+    alert(
+      error instanceof
+        Error
+        ? error.message
+        : "Reschedule failed."
+    );
+
+    setLoadingId(
+      null
+    );
   }
+}
 
   async function cancelBooking(
     booking: Booking
@@ -421,15 +441,22 @@ export default function ClientPage() {
                     />
 
                     <button
-                      onClick={() =>
-                        rescheduleBooking(
-                          booking
-                        )
-                      }
-                      className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white"
-                    >
-                      Reschedule
-                    </button>
+                        disabled={
+                          loadingId ===
+                          booking.id
+                        }
+                        onClick={() =>
+                          rescheduleBooking(
+                            booking
+                          )
+                        }
+                        className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white disabled:opacity-50"
+                      >
+                        {loadingId ===
+                        booking.id
+                          ? "Rescheduling..."
+                          : "Reschedule"}
+                      </button>
 
                     {booking.status !==
                       "cancelled" && (
