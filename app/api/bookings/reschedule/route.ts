@@ -1,43 +1,70 @@
 import { NextResponse } from "next/server";
 
-import {
-  createClient,
-} from "@supabase/supabase-js";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-import { updateCalendarEvent }
-from "@/lib/updateCalendarEvent";
+function timeToMinutes(
+  time: string
+) {
 
-import { sendRescheduleEmail }
-from "@/lib/sendRescheduleEmail";
+  const [h, m] =
+    time.split(":");
 
-const supabase =
-  createClient(
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL!,
-    process.env
-      .SUPABASE_SERVICE_ROLE_KEY!
+  return (
+    Number(h) * 60 +
+    Number(m)
   );
+}
+
+function minutesToTime(
+  minutes: number
+) {
+
+  const hours =
+    Math.floor(
+      minutes / 60
+    );
+
+  const mins =
+    minutes % 60;
+
+  return `${String(
+    hours
+  ).padStart(
+    2,
+    "0"
+  )}:${String(
+    mins
+  ).padStart(
+    2,
+    "0"
+  )}`;
+}
 
 export async function POST(
   request: Request
 ) {
+
   try {
+
+    const body =
+      await request.json();
+
     const {
       bookingId,
       newDate,
       newTime,
-    } =
-      await request.json();
+    } = body;
 
     if (
       !bookingId ||
       !newDate ||
       !newTime
     ) {
+
       return NextResponse.json(
         {
           error:
-            "Missing required fields",
+            "Missing required fields.",
         },
         {
           status: 400,
@@ -45,10 +72,24 @@ export async function POST(
       );
     }
 
-    const booking =
-      await supabase
-        .from("bookings")
-        .select("*")
+    const {
+      data: booking,
+      error:
+        bookingError,
+    } =
+      await supabaseAdmin
+        .from(
+          "bookings"
+        )
+        .select(
+          `
+          id,
+          service_id,
+          booking_time,
+          booking_end_time,
+          status
+          `
+        )
         .eq(
           "id",
           bookingId
@@ -56,12 +97,14 @@ export async function POST(
         .single();
 
     if (
-      !booking.data
+      bookingError ||
+      !booking
     ) {
+
       return NextResponse.json(
         {
           error:
-            "Booking not found",
+            "Booking not found.",
         },
         {
           status: 404,
@@ -69,27 +112,128 @@ export async function POST(
       );
     }
 
-    const slotCheck =
-      await supabase
-        .from("availability")
-        .select("*")
-        .eq(
-          "available_date",
-          newDate
+    const {
+      data: service,
+    } =
+      await supabaseAdmin
+        .from(
+          "services"
+        )
+        .select(
+          "duration"
         )
         .eq(
-          "available_time",
-          newTime
+          "id",
+          booking.service_id
         )
-        .maybeSingle();
+        .single();
 
     if (
-      !slotCheck.data
+      !service
     ) {
+
       return NextResponse.json(
         {
           error:
-            "Selected slot unavailable",
+            "Service not found.",
+        },
+        {
+          status: 404,
+        }
+      );
+    }
+
+    const duration =
+      service.duration;
+
+    const newEndTime =
+      minutesToTime(
+        timeToMinutes(
+          newTime
+        ) +
+          duration
+      );
+
+    const {
+      data:
+        existingBookings,
+    } =
+      await supabaseAdmin
+        .from(
+          "bookings"
+        )
+        .select(
+          `
+          id,
+          booking_time,
+          booking_end_time
+          `
+        )
+        .eq(
+          "booking_date",
+          newDate
+        )
+        .neq(
+          "id",
+          bookingId
+        )
+        .neq(
+          "status",
+          "cancelled"
+        );
+
+    const requestedStart =
+      timeToMinutes(
+        newTime
+      );
+
+    const requestedEnd =
+      timeToMinutes(
+        newEndTime
+      );
+
+    const conflict =
+      (
+        existingBookings ??
+        []
+      ).some(
+        (
+          row
+        ) => {
+
+          if (
+            !row.booking_end_time
+          ) {
+            return false;
+          }
+
+          const existingStart =
+            timeToMinutes(
+              row.booking_time
+            );
+
+          const existingEnd =
+            timeToMinutes(
+              row.booking_end_time
+            );
+
+          return (
+            requestedStart <
+              existingEnd &&
+            requestedEnd >
+              existingStart
+          );
+        }
+      );
+
+    if (
+      conflict
+    ) {
+
+      return NextResponse.json(
+        {
+          error:
+            "That new time overlaps an existing booking.",
         },
         {
           status: 409,
@@ -97,114 +241,70 @@ export async function POST(
       );
     }
 
-    await supabase
-      .from("availability")
-      .insert({
-        available_date:
-          booking.data
-            .booking_date,
+    const {
+      error:
+        updateError,
+    } =
+      await supabaseAdmin
+        .from(
+          "bookings"
+        )
+        .update({
 
-        available_time:
-          booking.data
-            .booking_time,
+          booking_date:
+            newDate,
 
-        timezone:
-          booking.data
-            .timezone,
-      });
+          booking_time:
+            newTime,
 
-    await supabase
-      .from("availability")
-      .delete()
-      .eq(
-        "available_date",
-        newDate
-      )
-      .eq(
-        "available_time",
-        newTime
-      );
+          booking_end_time:
+            newEndTime,
 
-    await supabase
-      .from("bookings")
-      .update({
-        booking_date:
-          newDate,
-
-        booking_time:
-          newTime,
-
-        status:
-          "rescheduled",
-      })
-      .eq(
-        "id",
-        bookingId
-      );
+          status:
+            "rescheduled",
+        })
+        .eq(
+          "id",
+          bookingId
+        );
 
     if (
-      booking.data
-        .calendar_event_id
+      updateError
     ) {
-      await updateCalendarEvent({
-        calendarEventId:
-          booking.data
-            .calendar_event_id,
 
-        customerEmail:
-          booking.data
-            .customer_email,
+      console.error(
+        updateError
+      );
 
-        bookingDate:
-          newDate,
-
-        bookingTime:
-          newTime,
-
-        timezone:
-          booking.data
-            .timezone,
-      });
+      return NextResponse.json(
+        {
+          error:
+            "Reschedule failed.",
+        },
+        {
+          status: 500,
+        }
+      );
     }
 
-    await sendRescheduleEmail({
-      customerEmail:
-        booking.data
-          .customer_email,
-
-      bookingDate:
-        newDate,
-
-      bookingTime:
-        newTime,
-
-      timezone:
-        booking.data
-          .timezone,
-
-      meetingLink:
-        booking.data
-          .meeting_link,
-    });
-
-    console.log(
-      "BOOKING RESCHEDULED:",
-      bookingId
+    return NextResponse.json(
+      {
+        success: true,
+      }
     );
 
-    return NextResponse.json({
-      success: true,
-    });
-  } catch (error) {
+  } catch (
+    error
+  ) {
+
     console.error(
-      "RESCHEDULE ERROR:",
       error
     );
 
     return NextResponse.json(
       {
         error:
-          "Reschedule failed",
+          "Server error.",
       },
       {
         status: 500,

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
+
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const stripe = new Stripe(
@@ -10,10 +11,25 @@ const stripe = new Stripe(
   }
 );
 
+function timeToMinutes(
+  time: string
+) {
+
+  const [h, m] =
+    time.split(":");
+
+  return (
+    Number(h) * 60 +
+    Number(m)
+  );
+}
+
 export async function POST(
   request: Request
 ) {
+
   try {
+
     const body =
       await request.json();
 
@@ -23,35 +39,87 @@ export async function POST(
       customer_email,
       booking_date,
       booking_time,
+      booking_end_time,
       notes,
       timezone,
       client_id,
     } = body;
 
     const {
-      data: existingBooking,
-    } = await supabaseAdmin
-      .from("bookings")
-      .select("id")
-      .eq(
-        "booking_date",
-        booking_date
-      )
-      .eq(
-        "booking_time",
-        booking_time
-      )
-      .neq(
-        "status",
-        "cancelled"
-      )
-      .maybeSingle();
+      data: existingBookings,
+    } =
+      await supabaseAdmin
+        .from(
+          "bookings"
+        )
+        .select(
+          `
+          id,
+          booking_time,
+          booking_end_time
+          `
+        )
+        .eq(
+          "booking_date",
+          booking_date
+        )
+        .neq(
+          "status",
+          "cancelled"
+        );
 
-    if (existingBooking) {
+    const requestedStart =
+      timeToMinutes(
+        booking_time
+      );
+
+    const requestedEnd =
+      timeToMinutes(
+        booking_end_time
+      );
+
+    const hasConflict =
+      (
+        existingBookings ??
+        []
+      ).some(
+        (
+          booking
+        ) => {
+
+          if (
+            !booking.booking_end_time
+          ) {
+            return false;
+          }
+
+          const existingStart =
+            timeToMinutes(
+              booking.booking_time
+            );
+
+          const existingEnd =
+            timeToMinutes(
+              booking.booking_end_time
+            );
+
+          return (
+            requestedStart <
+              existingEnd &&
+            requestedEnd >
+              existingStart
+          );
+        }
+      );
+
+    if (
+      hasConflict
+    ) {
+
       return NextResponse.json(
         {
           error:
-            "This slot is already booked.",
+            "This time overlaps with an existing booking.",
         },
         {
           status: 409,
@@ -64,23 +132,42 @@ export async function POST(
       error,
     } =
       await supabaseAdmin
-        .from("bookings")
+        .from(
+          "bookings"
+        )
         .insert({
+
           customer_email,
+
           booking_date,
+
           booking_time,
+
+          booking_end_time,
+
           payment_status:
             "pending",
-          status: "pending",
+
+          status:
+            "pending",
+
           notes,
+
           timezone,
+
           client_id,
         })
         .select()
         .single();
 
-    if (error || !booking) {
-      console.error(error);
+    if (
+      error ||
+      !booking
+    ) {
+
+      console.error(
+        error
+      );
 
       return NextResponse.json(
         {
@@ -93,22 +180,14 @@ export async function POST(
       );
     }
 
-    await supabaseAdmin
-      .from("availability")
-      .delete()
-      .eq(
-        "available_date",
-        booking_date
-      )
-      .eq(
-        "available_time",
-        booking_time
-      );
-
     const session =
-      await stripe.checkout.sessions.create(
-        {
-          mode: "payment",
+      await stripe
+        .checkout
+        .sessions
+        .create({
+
+          mode:
+            "payment",
 
           customer_email,
 
@@ -117,7 +196,9 @@ export async function POST(
 
           line_items: [
             {
+
               price_data: {
+
                 currency:
                   "usd",
 
@@ -129,15 +210,18 @@ export async function POST(
 
                 unit_amount:
                   Math.round(
-                    price * 100
+                    price *
+                      100
                   ),
               },
 
-              quantity: 1,
+              quantity:
+                1,
             },
           ],
 
           metadata: {
+
             bookingId:
               booking.id.toString(),
           },
@@ -147,14 +231,22 @@ export async function POST(
 
           cancel_url:
             "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/cancel",
-        }
-      );
+        });
 
-    return NextResponse.json({
-      url: session.url,
-    });
-  } catch (error) {
-    console.error(error);
+    return NextResponse.json(
+      {
+        url:
+          session.url,
+      }
+    );
+
+  } catch (
+    error
+  ) {
+
+    console.error(
+      error
+    );
 
     return NextResponse.json(
       {

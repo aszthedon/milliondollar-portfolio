@@ -29,6 +29,12 @@ export default function DashboardBookingsPage() {
       null
     );
 
+  const [newDate, setNewDate] =
+    useState("");
+
+  const [newTime, setNewTime] =
+    useState("");
+
   async function fetchBookings() {
     const { data } =
       await supabase
@@ -40,6 +46,86 @@ export default function DashboardBookingsPage() {
 
     if (data) {
       setBookings(data);
+    }
+  }
+
+  async function rescheduleBooking(
+    booking: Booking
+  ) {
+    if (
+      !newDate ||
+      !newTime
+    ) {
+      alert(
+        "Select a new date and time."
+      );
+
+      return;
+    }
+
+    try {
+      setLoadingId(
+        booking.id
+      );
+
+      const response =
+        await fetch(
+          "/api/bookings/reschedule",
+          {
+            method:
+              "POST",
+
+            headers: {
+              "Content-Type":
+                "application/json",
+            },
+
+            body:
+              JSON.stringify(
+                {
+                  bookingId:
+                    booking.id,
+
+                  newDate,
+
+                  newTime,
+                }
+              ),
+          }
+        );
+
+      const data =
+        await response.json();
+
+      if (
+        !response.ok
+      ) {
+        throw new Error(
+          data.error ??
+            "Reschedule failed."
+        );
+      }
+
+      setNewDate("");
+      setNewTime("");
+
+      await fetchBookings();
+
+      setLoadingId(
+        null
+      );
+    } catch (error) {
+      console.error(
+        error
+      );
+
+      alert(
+        "Reschedule failed."
+      );
+
+      setLoadingId(
+        null
+      );
     }
   }
 
@@ -208,6 +294,7 @@ export default function DashboardBookingsPage() {
 
   return (
     <main className="min-h-screen bg-black p-10 text-white">
+
       <div className="mb-12">
         <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
           Dashboard
@@ -219,6 +306,7 @@ export default function DashboardBookingsPage() {
       </div>
 
       <div className="grid gap-6">
+
         {bookings.map(
           (booking) => (
             <div
@@ -227,8 +315,11 @@ export default function DashboardBookingsPage() {
               }
               className="rounded-3xl border border-white/10 bg-white/5 p-8"
             >
+
               <div className="flex flex-col gap-8 lg:flex-row lg:items-start lg:justify-between">
+
                 <div>
+
                   <h2 className="text-3xl font-semibold">
                     {
                       booking.customer_email
@@ -238,8 +329,7 @@ export default function DashboardBookingsPage() {
                   <p className="mt-2 text-zinc-400">
                     {
                       booking.booking_date
-                    }{" "}
-                    at{" "}
+                    } at{" "}
                     {
                       booking.booking_time
                     }
@@ -250,9 +340,11 @@ export default function DashboardBookingsPage() {
                       booking.notes
                     }
                   </p>
+
                 </div>
 
                 <div className="flex flex-col gap-3">
+
                   <div className="rounded-full border border-white/10 px-4 py-2 text-sm">
                     Status:{" "}
                     {
@@ -266,6 +358,56 @@ export default function DashboardBookingsPage() {
                       booking.payment_status
                     }
                   </div>
+
+                  <input
+                    type="date"
+                    value={
+                      newDate
+                    }
+                    onChange={(
+                      e
+                    ) =>
+                      setNewDate(
+                        e.target
+                          .value
+                      )
+                    }
+                    className="rounded-xl border border-white/10 bg-black px-4 py-2 text-sm"
+                  />
+
+                  <input
+                    type="time"
+                    value={
+                      newTime
+                    }
+                    onChange={(
+                      e
+                    ) =>
+                      setNewTime(
+                        e.target
+                          .value
+                      )
+                    }
+                    className="rounded-xl border border-white/10 bg-black px-4 py-2 text-sm"
+                  />
+
+                  <button
+                    disabled={
+                      loadingId ===
+                      booking.id
+                    }
+                    onClick={() =>
+                      rescheduleBooking(
+                        booking
+                      )
+                    }
+                    className="rounded-full border border-yellow-500 px-4 py-2 text-sm text-yellow-400 transition hover:bg-yellow-500 hover:text-black disabled:opacity-50"
+                  >
+                    {loadingId ===
+                    booking.id
+                      ? "Rescheduling..."
+                      : "Reschedule"}
+                  </button>
 
                   <button
                     onClick={() =>
@@ -328,8 +470,11 @@ export default function DashboardBookingsPage() {
                       ? "Processing..."
                       : "Reject"}
                   </button>
+
                 </div>
+
               </div>
+
             </div>
           )
         )}
@@ -338,12 +483,13 @@ export default function DashboardBookingsPage() {
           0 && (
           <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
             <p className="text-zinc-400">
-              No bookings
-              found.
+              No bookings found.
             </p>
           </div>
         )}
+
       </div>
+
     </main>
   );
 }

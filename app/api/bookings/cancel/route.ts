@@ -77,22 +77,6 @@ export async function POST(
     }
 
     await supabase
-      .from("availability")
-      .insert({
-        available_date:
-          booking.data
-            .booking_date,
-
-        available_time:
-          booking.data
-            .booking_time,
-
-        timezone:
-          booking.data
-            .timezone,
-      });
-
-    await supabase
       .from("bookings")
       .update({
         status:

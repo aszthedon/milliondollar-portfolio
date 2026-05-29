@@ -10,96 +10,355 @@ import { supabase } from "@/lib/supabase";
 interface Availability {
   id: number;
   available_date: string;
-  available_time: string;
+  start_time: string;
+  end_time: string;
   timezone: string;
 }
 
+const weekdays = [
+  "Sunday",
+  "Monday",
+  "Tuesday",
+  "Wednesday",
+  "Thursday",
+  "Friday",
+  "Saturday",
+];
+
 export default function AvailabilityPage() {
+
   const [date, setDate] =
     useState("");
 
-  const [time, setTime] =
+  const [startTime, setStartTime] =
+    useState("");
+
+  const [endTime, setEndTime] =
     useState("");
 
   const [availability, setAvailability] =
     useState<Availability[]>([]);
 
+  const [loading, setLoading] =
+    useState(false);
+
+  const [bulkStartDate, setBulkStartDate] =
+    useState("");
+
+  const [bulkEndDate, setBulkEndDate] =
+    useState("");
+
+  const [
+    bulkStartTime,
+    setBulkStartTime,
+  ] = useState("");
+
+  const [
+    bulkEndTime,
+    setBulkEndTime,
+  ] = useState("");
+
+  const [
+    selectedDays,
+    setSelectedDays,
+  ] = useState<number[]>([
+    1,2,3,4,5,
+  ]);
+
   async function fetchAvailability() {
-    const { data } = await supabase
-      .from("availability")
-      .select("*")
-      .order("available_date", {
-        ascending: true,
-      });
+
+    const { data } =
+      await supabase
+        .from(
+          "availability"
+        )
+        .select("*")
+        .order(
+          "available_date",
+          {
+            ascending:
+              true,
+          }
+        );
 
     if (data) {
-      setAvailability(data);
+      setAvailability(
+        data
+      );
     }
   }
 
   async function createAvailability() {
-    if (!date || !time) {
+
+    if (
+      !date ||
+      !startTime ||
+      !endTime
+    ) {
+
       alert(
-        "Please select a date and time."
+        "Please complete all fields."
       );
 
       return;
     }
 
-    const timezone =
-      Intl.DateTimeFormat()
-        .resolvedOptions()
-        .timeZone;
+    try {
 
-    const { error } =
-      await supabase
-        .from("availability")
-        .insert({
-          available_date: date,
+      setLoading(
+        true
+      );
 
-          available_time: time,
+      const timezone =
+        Intl.DateTimeFormat()
+          .resolvedOptions()
+          .timeZone;
 
-          timezone,
-        });
+      const { error } =
+        await supabase
+          .from(
+            "availability"
+          )
+          .insert({
+            available_date:
+              date,
 
-    if (error) {
-      alert(error.message);
+            start_time:
+              startTime,
+
+            end_time:
+              endTime,
+
+            timezone,
+          });
+
+      if (error) {
+        throw error;
+      }
+
+      setDate("");
+      setStartTime("");
+      setEndTime("");
+
+      await fetchAvailability();
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        error
+      );
+
+      alert(
+        "Creation failed."
+      );
+    }
+
+    setLoading(
+      false
+    );
+  }
+
+  async function createBulkAvailability() {
+
+    if (
+      !bulkStartDate ||
+      !bulkEndDate ||
+      !bulkStartTime ||
+      !bulkEndTime
+    ) {
+
+      alert(
+        "Complete all bulk fields."
+      );
 
       return;
     }
 
-    setDate("");
-    setTime("");
+    try {
 
-    fetchAvailability();
+      setLoading(
+        true
+      );
+
+      const timezone =
+        Intl.DateTimeFormat()
+          .resolvedOptions()
+          .timeZone;
+
+      const windows = [];
+
+      const start =
+        new Date(
+          bulkStartDate
+        );
+
+      const end =
+        new Date(
+          bulkEndDate
+        );
+
+      for (
+        let day =
+          new Date(
+            start
+          );
+
+        day <= end;
+
+        day.setDate(
+          day.getDate() +
+            1
+        )
+      ) {
+
+        if (
+          !selectedDays.includes(
+            day.getDay()
+          )
+        ) {
+          continue;
+        }
+
+        windows.push({
+
+          available_date:
+            day
+              .toISOString()
+              .split(
+                "T"
+              )[0],
+
+          start_time:
+            bulkStartTime,
+
+          end_time:
+            bulkEndTime,
+
+          timezone,
+        });
+      }
+
+      if (
+        windows.length ===
+        0
+      ) {
+
+        alert(
+          "No windows generated."
+        );
+
+        setLoading(
+          false
+        );
+
+        return;
+      }
+
+      const {
+        data:
+          existingAvailability,
+      } =
+        await supabase
+          .from(
+            "availability"
+          )
+          .select(
+            "available_date,start_time,end_time"
+          );
+
+      const blockedSet =
+        new Set(
+          (
+            existingAvailability ??
+            []
+          ).map(
+            (
+              row
+            ) =>
+              `${row.available_date}_${row.start_time}_${row.end_time}`
+          )
+        );
+
+      const cleanWindows =
+        windows.filter(
+          (
+            row
+          ) =>
+            !blockedSet.has(
+              `${row.available_date}_${row.start_time}_${row.end_time}`
+            )
+        );
+
+      if (
+        cleanWindows.length ===
+        0
+      ) {
+
+        alert(
+          "All windows already exist."
+        );
+
+        setLoading(
+          false
+        );
+
+        return;
+      }
+
+      const { error } =
+        await supabase
+          .from(
+            "availability"
+          )
+          .insert(
+            cleanWindows
+          );
+
+      if (error) {
+        throw error;
+      }
+
+      await fetchAvailability();
+
+      alert(
+`${cleanWindows.length} availability windows created.`
+      );
+
+    } catch (
+      error
+    ) {
+
+      console.error(
+        error
+      );
+
+      alert(
+        "Bulk generation failed."
+      );
+    }
+
+    setLoading(
+      false
+    );
   }
 
   async function deleteAvailability(
     id: number
   ) {
+
     await supabase
-      .from("availability")
+      .from(
+        "availability"
+      )
       .delete()
-      .eq("id", id);
-
-    fetchAvailability();
-  }
-
-  function formatTime(
-    time: string
-  ) {
-    const date =
-      new Date(
-        `1970-01-01T${time}`
+      .eq(
+        "id",
+        id
       );
 
-    return date.toLocaleTimeString(
-      [],
-      {
-        hour: "numeric",
-        minute: "2-digit",
-      }
-    );
+    fetchAvailability();
   }
 
   useEffect(() => {
@@ -108,21 +367,25 @@ export default function AvailabilityPage() {
 
   return (
     <main className="min-h-screen bg-black p-10 text-white">
+
       <div className="mb-12">
+
         <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
           Admin Dashboard
         </p>
 
         <h1 className="text-5xl font-bold">
-          Availability
+          Availability Windows
         </h1>
+
       </div>
 
       <div className="mb-10 grid gap-4 rounded-3xl border border-white/10 bg-white/5 p-8 md:grid-cols-4">
+
         <input
           type="date"
           value={date}
-          onChange={(e) =>
+          onChange={(e)=>
             setDate(
               e.target.value
             )
@@ -132,70 +395,229 @@ export default function AvailabilityPage() {
 
         <input
           type="time"
-          value={time}
-          onChange={(e) =>
-            setTime(
+          value={startTime}
+          onChange={(e)=>
+            setStartTime(
               e.target.value
             )
           }
           className="rounded-xl border border-white/10 bg-black px-4 py-3"
         />
 
-        <div className="flex items-center rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-zinc-400">
-          {
-            Intl.DateTimeFormat()
-              .resolvedOptions()
-              .timeZone
+        <input
+          type="time"
+          value={endTime}
+          onChange={(e)=>
+            setEndTime(
+              e.target.value
+            )
           }
-        </div>
+          className="rounded-xl border border-white/10 bg-black px-4 py-3"
+        />
 
         <button
+          disabled={
+            loading
+          }
           onClick={
             createAvailability
           }
-          className="rounded-xl bg-white px-6 py-3 text-black"
+          className="rounded-xl bg-white px-6 py-3 text-black disabled:opacity-50"
         >
-          Add Availability
+          {
+            loading
+              ? "Adding..."
+              : "Add Window"
+          }
         </button>
+
+      </div>
+
+      <div className="mb-10 rounded-3xl border border-white/10 bg-white/5 p-8">
+
+        <h2 className="mb-6 text-2xl font-bold">
+          Recurring Windows
+        </h2>
+
+        <div className="grid gap-4 md:grid-cols-4">
+
+          <input
+            type="date"
+            value={
+              bulkStartDate
+            }
+            onChange={(e)=>
+              setBulkStartDate(
+                e.target.value
+              )
+            }
+            className="rounded-xl border border-white/10 bg-black px-4 py-3"
+          />
+
+          <input
+            type="date"
+            value={
+              bulkEndDate
+            }
+            onChange={(e)=>
+              setBulkEndDate(
+                e.target.value
+              )
+            }
+            className="rounded-xl border border-white/10 bg-black px-4 py-3"
+          />
+
+          <input
+            type="time"
+            value={
+              bulkStartTime
+            }
+            onChange={(e)=>
+              setBulkStartTime(
+                e.target.value
+              )
+            }
+            className="rounded-xl border border-white/10 bg-black px-4 py-3"
+          />
+
+          <input
+            type="time"
+            value={
+              bulkEndTime
+            }
+            onChange={(e)=>
+              setBulkEndTime(
+                e.target.value
+              )
+            }
+            className="rounded-xl border border-white/10 bg-black px-4 py-3"
+          />
+
+        </div>
+
+        <div className="mt-6 flex flex-wrap gap-3">
+
+          {weekdays.map(
+            (
+              day,
+              index
+            ) => (
+
+              <button
+                key={day}
+                onClick={()=>
+                  setSelectedDays(
+                    (
+                      prev
+                    ) =>
+                      prev.includes(
+                        index
+                      )
+                        ? prev.filter(
+                            (
+                              d
+                            ) =>
+                              d !==
+                              index
+                          )
+                        : [
+                            ...prev,
+                            index,
+                          ]
+                  )
+                }
+                className={`rounded-full px-4 py-2 text-sm ${
+                  selectedDays.includes(
+                    index
+                  )
+                    ? "bg-white text-black"
+                    : "border border-white/10"
+                }`}
+              >
+                {day}
+              </button>
+
+            )
+          )}
+
+        </div>
+
+        <button
+          disabled={
+            loading
+          }
+          onClick={
+            createBulkAvailability
+          }
+          className="mt-8 rounded-xl bg-green-500 px-6 py-3 text-black"
+        >
+          {
+            loading
+              ? "Generating..."
+              : "Generate Windows"
+          }
+        </button>
+
       </div>
 
       <div className="grid gap-4">
-        {availability.map((slot) => (
-          <div
-            key={slot.id}
-            className="flex flex-col gap-4 rounded-3xl border border-white/10 bg-white/5 p-6 md:flex-row md:items-center md:justify-between"
-          >
-            <div>
-              <h2 className="text-2xl font-semibold">
-                {
-                  slot.available_date
+
+        {availability.map(
+          (
+            row
+          ) => (
+
+            <div
+              key={
+                row.id
+              }
+              className="flex items-center justify-between rounded-3xl border border-white/10 bg-white/5 p-6"
+            >
+
+              <div>
+
+                <h2 className="text-2xl font-semibold">
+                  {
+                    row.available_date
+                  }
+                </h2>
+
+                <p className="mt-2 text-zinc-400">
+                  {
+                    row.start_time
+                  }
+                  {" — "}
+                  {
+                    row.end_time
+                  }
+                </p>
+
+                <p className="mt-2 text-sm text-zinc-500">
+                  {
+                    row.timezone
+                  }
+                </p>
+
+              </div>
+
+              <button
+                onClick={() =>
+                  deleteAvailability(
+                    row.id
+                  )
                 }
-              </h2>
+                className="rounded-full border border-red-500 px-4 py-2 text-red-500"
+              >
+                Delete
+              </button>
 
-              <p className="mt-2 text-zinc-400">
-                {formatTime(
-                  slot.available_time
-                )}
-              </p>
-
-              <p className="mt-2 text-sm text-zinc-500">
-                {slot.timezone}
-              </p>
             </div>
 
-            <button
-              onClick={() =>
-                deleteAvailability(
-                  slot.id
-                )
-              }
-              className="rounded-full border border-red-500 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500 hover:text-white"
-            >
-              Delete
-            </button>
-          </div>
-        ))}
+          )
+        )}
+
       </div>
+
     </main>
   );
 }

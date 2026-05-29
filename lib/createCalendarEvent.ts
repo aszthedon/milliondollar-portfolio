@@ -4,6 +4,7 @@ interface CreateEventProps {
   customerEmail: string;
   bookingDate: string;
   bookingTime: string;
+  bookingEndTime: string;
   timezone: string;
 }
 
@@ -11,93 +12,160 @@ export async function createCalendarEvent({
   customerEmail,
   bookingDate,
   bookingTime,
+  bookingEndTime,
   timezone,
 }: CreateEventProps) {
+
   try {
-    const [hour, minute] =
-      bookingTime.split(":");
+
+    const [
+      startHour,
+      startMinute,
+    ] =
+      bookingTime.split(
+        ":"
+      );
+
+    const [
+      endHour,
+      endMinute,
+    ] =
+      bookingEndTime.split(
+        ":"
+      );
 
     const startDate =
       new Date(
         Number(
-          bookingDate.split("-")[0]
+          bookingDate.split(
+            "-"
+          )[0]
         ),
+
         Number(
-          bookingDate.split("-")[1]
+          bookingDate.split(
+            "-"
+          )[1]
         ) - 1,
+
         Number(
-          bookingDate.split("-")[2]
+          bookingDate.split(
+            "-"
+          )[2]
         ),
-        Number(hour),
-        Number(minute)
+
+        Number(
+          startHour
+        ),
+
+        Number(
+          startMinute
+        )
       );
 
     const endDate =
       new Date(
-        startDate.getTime() +
-          60 * 60 * 1000
+        Number(
+          bookingDate.split(
+            "-"
+          )[0]
+        ),
+
+        Number(
+          bookingDate.split(
+            "-"
+          )[1]
+        ) - 1,
+
+        Number(
+          bookingDate.split(
+            "-"
+          )[2]
+        ),
+
+        Number(
+          endHour
+        ),
+
+        Number(
+          endMinute
+        )
       );
 
     const event =
-      await calendar.events.insert({
-        calendarId:
-          "primary",
+      await calendar
+        .events
+        .insert({
 
-        conferenceDataVersion: 1,
+          calendarId:
+            "primary",
 
-        requestBody: {
-          summary:
-            "New Client Booking",
+          conferenceDataVersion:
+            1,
 
-          description: `Booking for ${customerEmail}`,
+          requestBody: {
 
-          start: {
-            dateTime:
-              startDate
-                .toLocaleString(
-                  "sv-SE"
-                )
-                .replace(
-                  " ",
-                  "T"
-                ),
+            summary:
+              "New Client Booking",
 
-            timeZone:
-              timezone,
-          },
+            description:
+`Booking for ${customerEmail}`,
 
-          end: {
-            dateTime:
-              endDate
-                .toLocaleString(
-                  "sv-SE"
-                )
-                .replace(
-                  " ",
-                  "T"
-                ),
+            start: {
 
-            timeZone:
-              timezone,
-          },
+              dateTime:
+                startDate
+                  .toLocaleString(
+                    "sv-SE"
+                  )
+                  .replace(
+                    " ",
+                    "T"
+                  ),
 
-          attendees: [
-            {
-              email:
-                customerEmail,
+              timeZone:
+                timezone,
             },
-          ],
 
-          conferenceData: {
-            createRequest: {
-              requestId:
-                Math.random()
-                  .toString(36)
-                  .substring(2),
+            end: {
+
+              dateTime:
+                endDate
+                  .toLocaleString(
+                    "sv-SE"
+                  )
+                  .replace(
+                    " ",
+                    "T"
+                  ),
+
+              timeZone:
+                timezone,
+            },
+
+            attendees: [
+              {
+                email:
+                  customerEmail,
+              },
+            ],
+
+            conferenceData: {
+
+              createRequest: {
+
+                requestId:
+                  Math.random()
+                    .toString(
+                      36
+                    )
+                    .substring(
+                      2
+                    ),
+              },
             },
           },
-        },
-      });
+        });
 
     const meetingLink =
       event.data
@@ -122,15 +190,20 @@ export async function createCalendarEvent({
       meetingLink,
       calendarEventId,
     };
+
   } catch (error) {
+
     console.error(
       "GOOGLE CALENDAR ERROR:",
       error
     );
 
     return {
-      meetingLink: null,
-      calendarEventId: null,
+      meetingLink:
+        null,
+
+      calendarEventId:
+        null,
     };
   }
 }
