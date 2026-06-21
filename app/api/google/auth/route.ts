@@ -1,26 +1,29 @@
 import { google } from "googleapis";
 
+function getSiteUrl() {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+}
+
 export async function GET() {
+  const siteUrl = getSiteUrl();
+
   const oauth2Client =
     new google.auth.OAuth2(
-      process.env
-        .GOOGLE_CLIENT_ID,
-
-      process.env
-        .GOOGLE_CLIENT_SECRET,
-
-      "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/api/google/callback"
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET,
+      `${siteUrl}/api/google/callback`
     );
-
-  const scopes = [
-    "https://www.googleapis.com/auth/calendar",
-  ];
 
   const url =
     oauth2Client.generateAuthUrl({
       access_type: "offline",
-
-      scope: scopes,
+      prompt: "consent",
+      scope: [
+        "https://www.googleapis.com/auth/calendar",
+      ],
     });
 
   return Response.redirect(url);

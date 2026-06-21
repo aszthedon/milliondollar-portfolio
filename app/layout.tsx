@@ -10,7 +10,7 @@ const inter = Inter({
 export const metadata: Metadata = {
   title: "Million Dollar Ticket Productions",
   description:
-    "Premium digital experiences, booking systems, multimedia production, and scalable websites for modern brands.",
+    "A multimedia production, booking, branding, and creative services platform.",
 };
 
 export default function RootLayout({
@@ -19,7 +19,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         {children}
       </body>

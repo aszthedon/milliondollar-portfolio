@@ -1,49 +1,79 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import {
+  useEffect,
+  useState,
+} from "react";
 
 import Container from "../Container";
 import Button from "../ui/Button";
 
 import { supabase } from "@/lib/supabase";
 
+interface SiteSettings {
+  business_name?: string | null;
+  hero_heading?: string | null;
+  hero_description?: string | null;
+}
+
 export default function Hero() {
   const [businessName, setBusinessName] =
-    useState("Loading business...");
+    useState(
+      "Million Dollar Ticket Productions"
+    );
 
   const [heroHeading, setHeroHeading] =
-    useState("Loading heading...");
+    useState(
+      "Creative Production For Brands, Artists, And Visionaries"
+    );
 
-  const [heroDescription, setHeroDescription] =
-    useState("Loading description...");
+  const [
+    heroDescription,
+    setHeroDescription,
+  ] = useState(
+    "Book multimedia production, branding, website development, marketing, and creative services through a polished client experience."
+  );
 
   async function fetchSettings() {
-    const { data, error } = await supabase
-      .from("site_settings")
-      .select("*");
-
-    console.log("SITE SETTINGS OBJECT:", data[0]);
-    console.log("SITE SETTINGS ERROR:", error);
+    const { data, error } =
+      await supabase
+        .from("site_settings")
+        .select(
+          "business_name, hero_heading, hero_description"
+        )
+        .limit(1)
+        .maybeSingle();
 
     if (error) {
+      console.error(
+        "SITE SETTINGS ERROR:",
+        error
+      );
+
       return;
     }
 
-    if (data && data.length > 0) {
-      const settings = data[0];
+    const settings =
+      data as SiteSettings | null;
 
-      setBusinessName(
-        settings.business_name || ""
-      );
-
-      setHeroHeading(
-        settings.hero_heading || ""
-      );
-
-      setHeroDescription(
-        settings.hero_description || ""
-      );
+    if (!settings) {
+      return;
     }
+
+    setBusinessName(
+      settings.business_name ??
+        "Million Dollar Ticket Productions"
+    );
+
+    setHeroHeading(
+      settings.hero_heading ??
+        "Creative Production For Brands, Artists, And Visionaries"
+    );
+
+    setHeroDescription(
+      settings.hero_description ??
+        "Book multimedia production, branding, website development, marketing, and creative services through a polished client experience."
+    );
   }
 
   useEffect(() => {

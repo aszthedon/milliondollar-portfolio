@@ -1,20 +1,22 @@
 import { google } from "googleapis";
 
+function getSiteUrl() {
+  return (
+    process.env.NEXT_PUBLIC_SITE_URL ??
+    "http://localhost:3000"
+  ).replace(/\/$/, "");
+}
+
 const oauth2Client =
   new google.auth.OAuth2(
-    process.env
-      .GOOGLE_CLIENT_ID,
-
-    process.env
-      .GOOGLE_CLIENT_SECRET,
-
-    "https://orange-rotary-phone-4q647rrgq9wc5jrq-3000.app.github.dev/api/google/callback"
+    process.env.GOOGLE_CLIENT_ID,
+    process.env.GOOGLE_CLIENT_SECRET,
+    `${getSiteUrl()}/api/google/callback`
   );
 
 oauth2Client.setCredentials({
   refresh_token:
-    process.env
-      .GOOGLE_REFRESH_TOKEN,
+    process.env.GOOGLE_REFRESH_TOKEN,
 });
 
 export const calendar =
