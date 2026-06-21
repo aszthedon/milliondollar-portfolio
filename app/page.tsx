@@ -6,6 +6,7 @@ import Services from "@/components/sections/Services";
 import FeaturedWork from "@/components/sections/FeaturedWork";
 import Booking from "@/components/sections/Booking";
 import Gallery from "@/components/sections/Gallery";
+import FAQ from "@/components/sections/FAQ";
 import CTA from "@/components/sections/CTA";
 
 export default function Home() {
@@ -26,6 +27,8 @@ export default function Home() {
       <Gallery />
 
       <Booking />
+
+      <FAQ />
 
       <CTA />
 

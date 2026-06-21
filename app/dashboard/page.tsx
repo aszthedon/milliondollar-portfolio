@@ -313,7 +313,7 @@ export default function DashboardPage() {
     {
       title: "Site Settings",
       description:
-        "Edit homepage and branding content.",
+        "Edit homepage, branding content, and header buttons.",
       href: "/dashboard/settings",
     },
     {
@@ -321,6 +321,12 @@ export default function DashboardPage() {
       description:
         "Edit public menu links, labels, order, visibility, and external links.",
       href: "/dashboard/navigation",
+    },
+    {
+      title: "FAQs",
+      description:
+        "Add and manage frequently asked questions shown on the public website.",
+      href: "/dashboard/faqs",
     },
     {
       title: "Analytics",
@@ -390,8 +396,8 @@ export default function DashboardPage() {
 
           <p className="mt-4 max-w-2xl text-zinc-400">
             Manage bookings, services, availability, gallery content,
-            navigation, analytics, and client activity from one central admin
-            hub.
+            navigation, FAQs, analytics, and client activity from one central
+            admin hub.
           </p>
         </div>
 
