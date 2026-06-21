@@ -187,7 +187,10 @@ export default function DashboardPage() {
   function statusClass(
     status: string | null
   ) {
-    if (status === "approved") {
+    if (
+      status === "approved" ||
+      status === "confirmed"
+    ) {
       return "border-green-500 text-green-400";
     }
 
@@ -231,6 +234,12 @@ export default function DashboardPage() {
       value: getStatusCount("approved"),
       description:
         "Bookings approved by admin.",
+    },
+    {
+      label: "Confirmed",
+      value: getStatusCount("confirmed"),
+      description:
+        "Bookings confirmed after successful payment.",
     },
     {
       label: "Completed",
@@ -308,6 +317,42 @@ export default function DashboardPage() {
       href: "/dashboard/settings",
     },
     {
+      title: "Navigation",
+      description:
+        "Edit public menu links, labels, order, visibility, and external links.",
+      href: "/dashboard/navigation",
+    },
+    {
+      title: "Analytics",
+      description:
+        "Review revenue, paid bookings, conversion, and booking activity.",
+      href: "/dashboard/analytics",
+    },
+    {
+      title: "Service Variations",
+      description:
+        "Manage service packages, upgraded options, prices, and durations.",
+      href: "/dashboard/variations",
+    },
+    {
+      title: "Messages",
+      description:
+        "Review client messages and booking communication.",
+      href: "/dashboard/messages",
+    },
+    {
+      title: "Files",
+      description:
+        "Manage client files and uploaded project documents.",
+      href: "/dashboard/files",
+    },
+    {
+      title: "Notifications",
+      description:
+        "View reminders, booking updates, and platform alerts.",
+      href: "/dashboard/notifications",
+    },
+    {
       title: "Client Portal",
       description:
         "View the client-facing dashboard experience.",
@@ -333,7 +378,6 @@ export default function DashboardPage() {
 
   return (
     <main className="min-h-screen bg-black p-10 text-white">
-
       <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
         <div>
           <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
@@ -346,7 +390,8 @@ export default function DashboardPage() {
 
           <p className="mt-4 max-w-2xl text-zinc-400">
             Manage bookings, services, availability, gallery content,
-            and client activity from one central admin hub.
+            navigation, analytics, and client activity from one central admin
+            hub.
           </p>
         </div>
 
@@ -557,7 +602,6 @@ export default function DashboardPage() {
           )}
         </div>
       </section>
-
     </main>
   );
 }
