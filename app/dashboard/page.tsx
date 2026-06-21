@@ -239,6 +239,12 @@ export default function DashboardPage() {
       href: "/dashboard/settings",
     },
     {
+      title: "CTA Section",
+      description:
+        "Edit the final call-to-action section shown near the bottom of the public website.",
+      href: "/dashboard/cta",
+    },
+    {
       title: "Navigation",
       description:
         "Edit public menu links, labels, order, visibility, and external links.",
@@ -323,9 +329,10 @@ export default function DashboardPage() {
           <h1 className="text-5xl font-bold">Dashboard</h1>
 
           <p className="mt-4 max-w-2xl text-zinc-400">
-            Manage bookings, services, availability, gallery content,
-            navigation, process steps, FAQs, testimonials, analytics, and client
-            activity from one central admin hub.
+            Manage bookings, services, availability, gallery content, site
+            settings, CTA content, navigation, process steps, FAQs,
+            testimonials, analytics, and client activity from one central admin
+            hub.
           </p>
         </div>
 
