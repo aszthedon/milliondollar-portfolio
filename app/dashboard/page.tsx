@@ -1,9 +1,6 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
@@ -30,30 +27,16 @@ interface StatCard {
 export default function DashboardPage() {
   const router = useRouter();
 
-  const [loading, setLoading] =
-    useState(true);
-
-  const [bookings, setBookings] =
-    useState<Booking[]>([]);
-
-  const [servicesCount, setServicesCount] =
-    useState(0);
-
-  const [
-    availabilityCount,
-    setAvailabilityCount,
-  ] = useState(0);
-
-  const [error, setError] =
-    useState("");
+  const [loading, setLoading] = useState(true);
+  const [bookings, setBookings] = useState<Booking[]>([]);
+  const [servicesCount, setServicesCount] = useState(0);
+  const [availabilityCount, setAvailabilityCount] = useState(0);
+  const [error, setError] = useState("");
 
   async function fetchDashboardData() {
     setError("");
 
-    const {
-      data: bookingsData,
-      error: bookingsError,
-    } = await supabase
+    const { data: bookingsData, error: bookingsError } = await supabase
       .from("bookings")
       .select(
         "id, customer_email, booking_date, booking_time, booking_end_time, status, payment_status, created_at"
@@ -63,54 +46,31 @@ export default function DashboardPage() {
       });
 
     if (bookingsError) {
-      console.error(
-        "BOOKINGS FETCH ERROR:",
-        bookingsError
-      );
+      console.error("BOOKINGS FETCH ERROR:", bookingsError);
 
-      setError(
-        "Some dashboard data could not be loaded."
-      );
+      setError("Some dashboard data could not be loaded.");
     } else if (bookingsData) {
-      setBookings(
-        bookingsData as Booking[]
-      );
+      setBookings(bookingsData as Booking[]);
     }
 
-    const {
-      data: servicesData,
-      error: servicesError,
-    } = await supabase
+    const { data: servicesData, error: servicesError } = await supabase
       .from("services")
       .select("id");
 
     if (servicesError) {
-      console.error(
-        "SERVICES FETCH ERROR:",
-        servicesError
-      );
+      console.error("SERVICES FETCH ERROR:", servicesError);
     } else {
-      setServicesCount(
-        servicesData?.length ?? 0
-      );
+      setServicesCount(servicesData?.length ?? 0);
     }
 
-    const {
-      data: availabilityData,
-      error: availabilityError,
-    } = await supabase
+    const { data: availabilityData, error: availabilityError } = await supabase
       .from("availability")
       .select("id");
 
     if (availabilityError) {
-      console.error(
-        "AVAILABILITY FETCH ERROR:",
-        availabilityError
-      );
+      console.error("AVAILABILITY FETCH ERROR:", availabilityError);
     } else {
-      setAvailabilityCount(
-        availabilityData?.length ?? 0
-      );
+      setAvailabilityCount(availabilityData?.length ?? 0);
     }
   }
 
@@ -139,58 +99,34 @@ export default function DashboardPage() {
     router.push("/login");
   }
 
-  function getStatusCount(
-    status: string
-  ) {
-    return bookings.filter(
-      (booking) =>
-        booking.status === status
-    ).length;
+  function getStatusCount(status: string) {
+    return bookings.filter((booking) => booking.status === status).length;
   }
 
-  function getPaymentCount(
-    status: string
-  ) {
-    return bookings.filter(
-      (booking) =>
-        booking.payment_status === status
-    ).length;
+  function getPaymentCount(status: string) {
+    return bookings.filter((booking) => booking.payment_status === status)
+      .length;
   }
 
-  function formatTime(
-    time: string | null
-  ) {
+  function formatTime(time: string | null) {
     if (!time) return "Not set";
 
-    const date =
-      new Date(
-        `1970-01-01T${time}`
-      );
+    const date = new Date(`1970-01-01T${time}`);
 
-    return date.toLocaleTimeString(
-      [],
-      {
-        hour: "numeric",
-        minute: "2-digit",
-      }
-    );
+    return date.toLocaleTimeString([], {
+      hour: "numeric",
+      minute: "2-digit",
+    });
   }
 
-  function formatDate(
-    date: string | null
-  ) {
+  function formatDate(date: string | null) {
     if (!date) return "Not set";
 
     return date;
   }
 
-  function statusClass(
-    status: string | null
-  ) {
-    if (
-      status === "approved" ||
-      status === "confirmed"
-    ) {
+  function statusClass(status: string | null) {
+    if (status === "approved" || status === "confirmed") {
       return "border-green-500 text-green-400";
     }
 
@@ -213,75 +149,63 @@ export default function DashboardPage() {
     return "border-white/10 text-zinc-300";
   }
 
-  const recentBookings =
-    bookings.slice(0, 5);
+  const recentBookings = bookings.slice(0, 5);
 
   const statCards: StatCard[] = [
     {
       label: "Total Bookings",
       value: bookings.length,
-      description:
-        "All booking requests in the system.",
+      description: "All booking requests in the system.",
     },
     {
       label: "Pending",
       value: getStatusCount("pending"),
-      description:
-        "Bookings waiting for action.",
+      description: "Bookings waiting for action.",
     },
     {
       label: "Approved",
       value: getStatusCount("approved"),
-      description:
-        "Bookings approved by admin.",
+      description: "Bookings approved by admin.",
     },
     {
       label: "Confirmed",
       value: getStatusCount("confirmed"),
-      description:
-        "Bookings confirmed after successful payment.",
+      description: "Bookings confirmed after successful payment.",
     },
     {
       label: "Completed",
       value: getStatusCount("completed"),
-      description:
-        "Finished client bookings.",
+      description: "Finished client bookings.",
     },
     {
       label: "Cancelled",
       value: getStatusCount("cancelled"),
-      description:
-        "Bookings cancelled by client or admin.",
+      description: "Bookings cancelled by client or admin.",
     },
     {
       label: "Rescheduled",
       value: getStatusCount("rescheduled"),
-      description:
-        "Bookings moved to another time.",
+      description: "Bookings moved to another time.",
     },
     {
       label: "Paid",
       value: getPaymentCount("paid"),
-      description:
-        "Bookings marked as paid.",
+      description: "Bookings marked as paid.",
     },
     {
       label: "Pending Payment",
       value: getPaymentCount("pending"),
-      description:
-        "Bookings awaiting payment.",
+      description: "Bookings awaiting payment.",
     },
     {
       label: "Services",
       value: servicesCount,
-      description:
-        "Active services in your template.",
+      description: "Active services in your template.",
     },
     {
       label: "Availability",
       value: availabilityCount,
-      description:
-        "Availability records currently saved.",
+      description: "Availability records currently saved.",
     },
   ];
 
@@ -306,14 +230,12 @@ export default function DashboardPage() {
     },
     {
       title: "Gallery",
-      description:
-        "Upload and manage portfolio images.",
+      description: "Upload and manage portfolio images.",
       href: "/dashboard/gallery",
     },
     {
       title: "Site Settings",
-      description:
-        "Edit homepage, branding content, and header buttons.",
+      description: "Edit homepage, branding content, and header buttons.",
       href: "/dashboard/settings",
     },
     {
@@ -323,10 +245,22 @@ export default function DashboardPage() {
       href: "/dashboard/navigation",
     },
     {
+      title: "Process",
+      description:
+        "Edit the public How It Works steps shown on the website.",
+      href: "/dashboard/process",
+    },
+    {
       title: "FAQs",
       description:
         "Add and manage frequently asked questions shown on the public website.",
       href: "/dashboard/faqs",
+    },
+    {
+      title: "Testimonials",
+      description:
+        "Add and manage client reviews shown on the public website.",
+      href: "/dashboard/testimonials",
     },
     {
       title: "Analytics",
@@ -342,26 +276,22 @@ export default function DashboardPage() {
     },
     {
       title: "Messages",
-      description:
-        "Review client messages and booking communication.",
+      description: "Review client messages and booking communication.",
       href: "/dashboard/messages",
     },
     {
       title: "Files",
-      description:
-        "Manage client files and uploaded project documents.",
+      description: "Manage client files and uploaded project documents.",
       href: "/dashboard/files",
     },
     {
       title: "Notifications",
-      description:
-        "View reminders, booking updates, and platform alerts.",
+      description: "View reminders, booking updates, and platform alerts.",
       href: "/dashboard/notifications",
     },
     {
       title: "Client Portal",
-      description:
-        "View the client-facing dashboard experience.",
+      description: "View the client-facing dashboard experience.",
       href: "/client",
     },
   ];
@@ -390,14 +320,12 @@ export default function DashboardPage() {
             Million Dollar Ticket Productions
           </p>
 
-          <h1 className="text-5xl font-bold">
-            Dashboard
-          </h1>
+          <h1 className="text-5xl font-bold">Dashboard</h1>
 
           <p className="mt-4 max-w-2xl text-zinc-400">
             Manage bookings, services, availability, gallery content,
-            navigation, FAQs, analytics, and client activity from one central
-            admin hub.
+            navigation, process steps, FAQs, testimonials, analytics, and client
+            activity from one central admin hub.
           </p>
         </div>
 
@@ -422,9 +350,7 @@ export default function DashboardPage() {
               Overview
             </p>
 
-            <h2 className="mt-2 text-3xl font-bold">
-              Platform Analytics
-            </h2>
+            <h2 className="mt-2 text-3xl font-bold">Platform Analytics</h2>
           </div>
 
           <button
@@ -445,9 +371,7 @@ export default function DashboardPage() {
                 {card.label}
               </p>
 
-              <h3 className="mt-4 text-4xl font-bold">
-                {card.value}
-              </h3>
+              <h3 className="mt-4 text-4xl font-bold">{card.value}</h3>
 
               <p className="mt-3 text-sm text-zinc-400">
                 {card.description}
@@ -463,9 +387,7 @@ export default function DashboardPage() {
             Admin Tools
           </p>
 
-          <h2 className="mt-2 text-3xl font-bold">
-            Quick Actions
-          </h2>
+          <h2 className="mt-2 text-3xl font-bold">Quick Actions</h2>
         </div>
 
         <div className="grid gap-6 md:grid-cols-2 xl:grid-cols-3">
@@ -475,13 +397,9 @@ export default function DashboardPage() {
               href={action.href}
               className="rounded-3xl border border-white/10 bg-white/5 p-8 transition hover:bg-white/10"
             >
-              <h3 className="text-2xl font-semibold">
-                {action.title}
-              </h3>
+              <h3 className="text-2xl font-semibold">{action.title}</h3>
 
-              <p className="mt-4 text-zinc-400">
-                {action.description}
-              </p>
+              <p className="mt-4 text-zinc-400">{action.description}</p>
             </Link>
           ))}
         </div>
@@ -494,9 +412,7 @@ export default function DashboardPage() {
               Activity
             </p>
 
-            <h2 className="mt-2 text-3xl font-bold">
-              Recent Bookings
-            </h2>
+            <h2 className="mt-2 text-3xl font-bold">Recent Bookings</h2>
           </div>
 
           <Link
@@ -513,97 +429,70 @@ export default function DashboardPage() {
               <table className="w-full min-w-[800px] border-collapse">
                 <thead>
                   <tr className="border-b border-white/10 text-left text-sm uppercase tracking-[0.2em] text-zinc-500">
-                    <th className="px-6 py-4">
-                      Client
-                    </th>
-
-                    <th className="px-6 py-4">
-                      Date
-                    </th>
-
-                    <th className="px-6 py-4">
-                      Time
-                    </th>
-
-                    <th className="px-6 py-4">
-                      Status
-                    </th>
-
-                    <th className="px-6 py-4">
-                      Payment
-                    </th>
+                    <th className="px-6 py-4">Client</th>
+                    <th className="px-6 py-4">Date</th>
+                    <th className="px-6 py-4">Time</th>
+                    <th className="px-6 py-4">Status</th>
+                    <th className="px-6 py-4">Payment</th>
                   </tr>
                 </thead>
 
                 <tbody>
-                  {recentBookings.map(
-                    (booking) => (
-                      <tr
-                        key={booking.id}
-                        className="border-b border-white/5 last:border-0"
-                      >
-                        <td className="px-6 py-5">
-                          <div>
-                            <p className="font-medium">
-                              {booking.customer_email ??
-                                "No email"}
-                            </p>
+                  {recentBookings.map((booking) => (
+                    <tr
+                      key={booking.id}
+                      className="border-b border-white/5 last:border-0"
+                    >
+                      <td className="px-6 py-5">
+                        <div>
+                          <p className="font-medium">
+                            {booking.customer_email ?? "No email"}
+                          </p>
 
-                            <p className="mt-1 text-xs text-zinc-500">
-                              Booking #{booking.id}
-                            </p>
-                          </div>
-                        </td>
+                          <p className="mt-1 text-xs text-zinc-500">
+                            Booking #{booking.id}
+                          </p>
+                        </div>
+                      </td>
 
-                        <td className="px-6 py-5 text-zinc-300">
-                          {formatDate(
-                            booking.booking_date
-                          )}
-                        </td>
+                      <td className="px-6 py-5 text-zinc-300">
+                        {formatDate(booking.booking_date)}
+                      </td>
 
-                        <td className="px-6 py-5 text-zinc-300">
-                          {formatTime(
-                            booking.booking_time
-                          )}
+                      <td className="px-6 py-5 text-zinc-300">
+                        {formatTime(booking.booking_time)}
 
-                          {booking.booking_end_time && (
-                            <>
-                              {" — "}
-                              {formatTime(
-                                booking.booking_end_time
-                              )}
-                            </>
-                          )}
-                        </td>
+                        {booking.booking_end_time && (
+                          <>
+                            {" — "}
+                            {formatTime(booking.booking_end_time)}
+                          </>
+                        )}
+                      </td>
 
-                        <td className="px-6 py-5">
-                          <span
-                            className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.15em] ${statusClass(
-                              booking.status
-                            )}`}
-                          >
-                            {booking.status ??
-                              "unknown"}
-                          </span>
-                        </td>
+                      <td className="px-6 py-5">
+                        <span
+                          className={`rounded-full border px-3 py-1 text-xs uppercase tracking-[0.15em] ${statusClass(
+                            booking.status
+                          )}`}
+                        >
+                          {booking.status ?? "unknown"}
+                        </span>
+                      </td>
 
-                        <td className="px-6 py-5">
-                          <span className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.15em] text-zinc-300">
-                            {booking.payment_status ??
-                              "unknown"}
-                          </span>
-                        </td>
-                      </tr>
-                    )
-                  )}
+                      <td className="px-6 py-5">
+                        <span className="rounded-full border border-white/10 px-3 py-1 text-xs uppercase tracking-[0.15em] text-zinc-300">
+                          {booking.payment_status ?? "unknown"}
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
                 </tbody>
               </table>
             </div>
           ) : (
             <div className="p-10 text-center">
-              <p className="text-zinc-400">
-                No recent bookings found.
-              </p>
+              <p className="text-zinc-400">No recent bookings found.</p>
             </div>
           )}
         </div>
