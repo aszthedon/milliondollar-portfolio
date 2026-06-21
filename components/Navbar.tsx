@@ -20,6 +20,15 @@ interface NavigationLink {
   opens_new_tab: boolean;
 }
 
+interface SiteSettings {
+  business_name: string | null;
+  navbar_brand_text: string | null;
+  header_cta_label: string | null;
+  header_cta_href: string | null;
+  show_dashboard_button: boolean | null;
+  show_client_portal_button: boolean | null;
+}
+
 const fallbackLinks: NavigationLink[] = [
   {
     id: 1,
@@ -64,6 +73,56 @@ function isExternalLink(href: string) {
   );
 }
 
+function NavLinkItem({
+  link,
+  mobile = false,
+  onClick,
+}: {
+  link: NavigationLink;
+  mobile?: boolean;
+  onClick?: () => void;
+}) {
+  const external =
+    isExternalLink(link.href) ||
+    link.opens_new_tab;
+
+  const className = mobile
+    ? "rounded-2xl px-4 py-3 text-zinc-300 transition hover:bg-white/10 hover:text-white"
+    : "text-sm text-zinc-300 transition hover:text-white";
+
+  if (external) {
+    return (
+      <a
+        href={link.href}
+        target={
+          link.opens_new_tab
+            ? "_blank"
+            : undefined
+        }
+        rel={
+          link.opens_new_tab
+            ? "noopener noreferrer"
+            : undefined
+        }
+        onClick={onClick}
+        className={className}
+      >
+        {link.label}
+      </a>
+    );
+  }
+
+  return (
+    <Link
+      href={link.href}
+      onClick={onClick}
+      className={className}
+    >
+      {link.label}
+    </Link>
+  );
+}
+
 export default function Navbar() {
   const [menuOpen, setMenuOpen] =
     useState(false);
@@ -73,10 +132,20 @@ export default function Navbar() {
       fallbackLinks
     );
 
+  const [
+    settings,
+    setSettings,
+  ] = useState<SiteSettings | null>(
+    null
+  );
+
   useEffect(() => {
-    async function fetchNavigationLinks() {
-      const { data, error } =
-        await supabase
+    async function fetchHeaderData() {
+      const [
+        navigationResponse,
+        settingsResponse,
+      ] = await Promise.all([
+        supabase
           .from("navigation_links")
           .select(
             `
@@ -94,111 +163,88 @@ export default function Navbar() {
           })
           .order("created_at", {
             ascending: true,
-          });
+          }),
 
-      if (error) {
+        supabase
+          .from("site_settings")
+          .select(
+            `
+              business_name,
+              navbar_brand_text,
+              header_cta_label,
+              header_cta_href,
+              show_dashboard_button,
+              show_client_portal_button
+            `
+          )
+          .limit(1)
+          .maybeSingle(),
+      ]);
+
+      if (
+        navigationResponse.error
+      ) {
         console.error(
           "PUBLIC NAVIGATION ERROR:",
-          error
+          navigationResponse.error
         );
-        return;
       }
 
-      if (data && data.length > 0) {
+      if (
+        navigationResponse.data &&
+        navigationResponse.data.length > 0
+      ) {
         setLinks(
-          data as NavigationLink[]
+          navigationResponse.data as NavigationLink[]
+        );
+      }
+
+      if (settingsResponse.error) {
+        console.error(
+          "HEADER SETTINGS ERROR:",
+          settingsResponse.error
+        );
+      }
+
+      if (settingsResponse.data) {
+        setSettings(
+          settingsResponse.data as SiteSettings
         );
       }
     }
 
-    fetchNavigationLinks();
+    fetchHeaderData();
   }, []);
 
-  function renderDesktopLink(
-    link: NavigationLink
-  ) {
-    const external =
-      isExternalLink(link.href) ||
-      link.opens_new_tab;
+  const brandText =
+    settings?.navbar_brand_text ||
+    settings?.business_name ||
+    "MDT Productions";
 
-    if (external) {
-      return (
-        <a
-          key={link.id}
-          href={link.href}
-          target={
-            link.opens_new_tab
-              ? "_blank"
-              : undefined
-          }
-          rel={
-            link.opens_new_tab
-              ? "noopener noreferrer"
-              : undefined
-          }
-          className="text-sm text-zinc-300 transition hover:text-white"
-        >
-          {link.label}
-        </a>
-      );
-    }
+  const ctaLabel =
+    settings?.header_cta_label ||
+    "Book Now";
 
-    return (
-      <Link
-        key={link.id}
-        href={link.href}
-        className="text-sm text-zinc-300 transition hover:text-white"
-      >
-        {link.label}
-      </Link>
+  const ctaHref =
+    settings?.header_cta_href ||
+    "/#booking";
+
+  const showDashboardButton =
+    settings?.show_dashboard_button ??
+    true;
+
+  const showClientPortalButton =
+    settings?.show_client_portal_button ??
+    false;
+
+  const showCta =
+    Boolean(
+      ctaLabel.trim() &&
+        ctaHref.trim()
     );
-  }
 
-  function renderMobileLink(
-    link: NavigationLink
-  ) {
-    const external =
-      isExternalLink(link.href) ||
-      link.opens_new_tab;
-
-    if (external) {
-      return (
-        <a
-          key={link.id}
-          href={link.href}
-          target={
-            link.opens_new_tab
-              ? "_blank"
-              : undefined
-          }
-          rel={
-            link.opens_new_tab
-              ? "noopener noreferrer"
-              : undefined
-          }
-          onClick={() =>
-            setMenuOpen(false)
-          }
-          className="rounded-2xl px-4 py-3 text-zinc-300 transition hover:bg-white/10 hover:text-white"
-        >
-          {link.label}
-        </a>
-      );
-    }
-
-    return (
-      <Link
-        key={link.id}
-        href={link.href}
-        onClick={() =>
-          setMenuOpen(false)
-        }
-        className="rounded-2xl px-4 py-3 text-zinc-300 transition hover:bg-white/10 hover:text-white"
-      >
-        {link.label}
-      </Link>
-    );
-  }
+  const ctaIsExternal =
+    isExternalLink(ctaHref);
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur">
@@ -206,24 +252,57 @@ export default function Navbar() {
         <div className="flex items-center justify-between py-4">
           <Link
             href="/"
-            className="text-lg font-semibold uppercase tracking-[0.2em] text-white"
+            className="max-w-[220px] truncate text-lg font-semibold uppercase tracking-[0.2em] text-white"
           >
-            MDT Productions
+            {brandText}
           </Link>
 
           <div className="hidden items-center gap-8 md:flex">
-            {links.map((link) =>
-              renderDesktopLink(link)
-            )}
+            {links.map((link) => (
+              <NavLinkItem
+                key={link.id}
+                link={link}
+              />
+            ))}
           </div>
 
           <div className="hidden items-center gap-3 md:flex">
-            <Link
-              href="/dashboard"
-              className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white hover:text-black"
-            >
-              Dashboard
-            </Link>
+            {showClientPortalButton && (
+              <Link
+                href="/client"
+                className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white hover:text-black"
+              >
+                Client Portal
+              </Link>
+            )}
+
+            {showDashboardButton && (
+              <Link
+                href="/dashboard"
+                className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white hover:text-black"
+              >
+                Dashboard
+              </Link>
+            )}
+
+            {showCta &&
+              (ctaIsExternal ? (
+                <a
+                  href={ctaHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200"
+                >
+                  {ctaLabel}
+                </a>
+              ) : (
+                <Link
+                  href={ctaHref}
+                  className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200"
+                >
+                  {ctaLabel}
+                </Link>
+              ))}
           </div>
 
           <button
@@ -245,19 +324,65 @@ export default function Navbar() {
 
         {menuOpen && (
           <div className="flex flex-col gap-2 border-t border-white/10 py-6 md:hidden">
-            {links.map((link) =>
-              renderMobileLink(link)
+            {links.map((link) => (
+              <NavLinkItem
+                key={link.id}
+                link={link}
+                mobile
+                onClick={() =>
+                  setMenuOpen(false)
+                }
+              />
+            ))}
+
+            {showClientPortalButton && (
+              <Link
+                href="/client"
+                onClick={() =>
+                  setMenuOpen(false)
+                }
+                className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black"
+              >
+                Client Portal
+              </Link>
             )}
 
-            <Link
-              href="/dashboard"
-              onClick={() =>
-                setMenuOpen(false)
-              }
-              className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black"
-            >
-              Dashboard
-            </Link>
+            {showDashboardButton && (
+              <Link
+                href="/dashboard"
+                onClick={() =>
+                  setMenuOpen(false)
+                }
+                className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black"
+              >
+                Dashboard
+              </Link>
+            )}
+
+            {showCta &&
+              (ctaIsExternal ? (
+                <a
+                  href={ctaHref}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 font-medium text-black transition hover:bg-zinc-200"
+                >
+                  {ctaLabel}
+                </a>
+              ) : (
+                <Link
+                  href={ctaHref}
+                  onClick={() =>
+                    setMenuOpen(false)
+                  }
+                  className="rounded-2xl bg-white px-4 py-3 font-medium text-black transition hover:bg-zinc-200"
+                >
+                  {ctaLabel}
+                </Link>
+              ))}
           </div>
         )}
       </Container>
