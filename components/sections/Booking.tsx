@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  FormEvent,
   useEffect,
   useMemo,
   useState,
@@ -8,9 +9,9 @@ import {
 
 import dynamic from "next/dynamic";
 
-import Container from "../Container";
-import FadeIn from "../FadeIn";
+import "react-calendar/dist/Calendar.css";
 
+import Container from "@/components/Container";
 import { supabase } from "@/lib/supabase";
 
 const Calendar = dynamic(
@@ -24,16 +25,22 @@ interface Service {
   id: number;
   title: string;
   description: string | null;
-  price: number | null;
+  price: number;
   duration: number | null;
+  payment_mode: string | null;
+  deposit_type: string | null;
+  deposit_value: number | null;
 }
 
-interface Variation {
+interface ServiceVariation {
   id: number;
   service_id: number;
   variation_name: string;
-  price: number | null;
-  duration: number | null;
+  price: number;
+  duration: number;
+  payment_mode: string | null;
+  deposit_type: string | null;
+  deposit_value: number | null;
 }
 
 interface Availability {
@@ -53,11 +60,148 @@ interface ExistingBooking {
   status: string | null;
 }
 
-interface TimeOption {
-  label: string;
-  value: string;
-  endTime: string;
-  windowId: number;
+interface SelectedOption {
+  serviceId: number;
+  variationId: number | null;
+  name: string;
+  description: string | null;
+  price: number;
+  duration: number;
+  paymentMode: string;
+  depositType: string;
+  depositValue: number;
+}
+
+interface DiscountPreview {
+  valid: boolean;
+  code?: string;
+  discount_amount?: number;
+  discounted_price?: number;
+  message: string;
+}
+
+function formatDateKey(date: Date) {
+  const year = date.getFullYear();
+  const month = String(
+    date.getMonth() + 1
+  ).padStart(2, "0");
+  const day = String(
+    date.getDate()
+  ).padStart(2, "0");
+
+  return `${year}-${month}-${day}`;
+}
+
+function timeToMinutes(time: string) {
+  const [hourString, minuteString] =
+    time.split(":");
+
+  return (
+    Number(hourString) * 60 +
+    Number(minuteString ?? "0")
+  );
+}
+
+function minutesToTime(minutes: number) {
+  const hours =
+    Math.floor(minutes / 60) % 24;
+
+  const mins = minutes % 60;
+
+  return `${String(hours).padStart(
+    2,
+    "0"
+  )}:${String(mins).padStart(2, "0")}`;
+}
+
+function addMinutesToTime(
+  time: string,
+  minutesToAdd: number
+) {
+  return minutesToTime(
+    timeToMinutes(time) + minutesToAdd
+  );
+}
+
+function formatDisplayTime(time: string) {
+  const date =
+    new Date(`1970-01-01T${time}`);
+
+  return date.toLocaleTimeString([], {
+    hour: "numeric",
+    minute: "2-digit",
+  });
+}
+
+function formatMoney(amount: number) {
+  return `$${amount.toFixed(2)}`;
+}
+
+function isCancelledStatus(
+  status: string | null
+) {
+  return (
+    status === "cancelled" ||
+    status === "rejected"
+  );
+}
+
+function roundMoney(value: number) {
+  return Math.round(value * 100) / 100;
+}
+
+function calculateDepositAmount({
+  discountedPrice,
+  paymentMode,
+  depositType,
+  depositValue,
+}: {
+  discountedPrice: number;
+  paymentMode: string;
+  depositType: string;
+  depositValue: number;
+}) {
+  if (paymentMode !== "deposit") {
+    return discountedPrice;
+  }
+
+  if (depositType === "amount") {
+    return Math.min(
+      depositValue,
+      discountedPrice
+    );
+  }
+
+  return Math.min(
+    (discountedPrice * depositValue) / 100,
+    discountedPrice
+  );
+}
+
+function bookingOverlaps({
+  start,
+  end,
+  existingStart,
+  existingEnd,
+}: {
+  start: string;
+  end: string;
+  existingStart: string;
+  existingEnd: string;
+}) {
+  const startMinutes =
+    timeToMinutes(start);
+  const endMinutes =
+    timeToMinutes(end);
+  const existingStartMinutes =
+    timeToMinutes(existingStart);
+  const existingEndMinutes =
+    timeToMinutes(existingEnd);
+
+  return (
+    startMinutes < existingEndMinutes &&
+    endMinutes > existingStartMinutes
+  );
 }
 
 export default function Booking() {
@@ -67,11 +211,15 @@ export default function Booking() {
   const [services, setServices] =
     useState<Service[]>([]);
 
-  const [variations, setVariations] =
-    useState<Variation[]>([]);
+  const [
+    variations,
+    setVariations,
+  ] = useState<ServiceVariation[]>([]);
 
-  const [availability, setAvailability] =
-    useState<Availability[]>([]);
+  const [
+    availability,
+    setAvailability,
+  ] = useState<Availability[]>([]);
 
   const [
     existingBookings,
@@ -79,20 +227,24 @@ export default function Booking() {
   ] = useState<ExistingBooking[]>([]);
 
   const [
-    selectedService,
-    setSelectedService,
+    selectedServiceId,
+    setSelectedServiceId,
   ] = useState("");
 
   const [
-    selectedVariation,
-    setSelectedVariation,
+    selectedVariationId,
+    setSelectedVariationId,
   ] = useState("");
 
-  const [bookingDate, setBookingDate] =
-    useState<Date | null>(null);
+  const [
+    selectedDate,
+    setSelectedDate,
+  ] = useState<Date | null>(null);
 
-  const [bookingTime, setBookingTime] =
-    useState("");
+  const [
+    selectedTime,
+    setSelectedTime,
+  ] = useState("");
 
   const [
     customerEmail,
@@ -102,1015 +254,1065 @@ export default function Booking() {
   const [notes, setNotes] =
     useState("");
 
-  const [loading, setLoading] =
-    useState(false);
+  const [
+    discountCode,
+    setDiscountCode,
+  ] = useState("");
 
-  const [dataLoading, setDataLoading] =
-    useState(true);
+  const [
+    discountPreview,
+    setDiscountPreview,
+  ] = useState<DiscountPreview | null>(
+    null
+  );
+
+  const [
+    discountChecking,
+    setDiscountChecking,
+  ] = useState(false);
+
+  const [
+    loadingData,
+    setLoadingData,
+  ] = useState(true);
+
+  const [
+    submitting,
+    setSubmitting,
+  ] = useState(false);
 
   const [error, setError] =
     useState("");
 
+  const [success, setSuccess] =
+    useState("");
+
+  const timezone =
+    Intl.DateTimeFormat().resolvedOptions()
+      .timeZone || "America/New_York";
+
   useEffect(() => {
     setMounted(true);
+  }, []);
+
+  useEffect(() => {
+    async function fetchBookingData() {
+      try {
+        setLoadingData(true);
+        setError("");
+
+        const [
+          servicesResponse,
+          variationsResponse,
+          availabilityResponse,
+          bookingsResponse,
+        ] = await Promise.all([
+          supabase
+            .from("services")
+            .select(
+              `
+                id,
+                title,
+                description,
+                price,
+                duration,
+                payment_mode,
+                deposit_type,
+                deposit_value
+              `
+            )
+            .order("created_at", {
+              ascending: true,
+            }),
+
+          supabase
+            .from("service_variations")
+            .select(
+              `
+                id,
+                service_id,
+                variation_name,
+                price,
+                duration,
+                payment_mode,
+                deposit_type,
+                deposit_value
+              `
+            )
+            .order("created_at", {
+              ascending: true,
+            }),
+
+          supabase
+            .from("availability")
+            .select(
+              `
+                id,
+                available_date,
+                available_time,
+                start_time,
+                end_time,
+                timezone
+              `
+            )
+            .order("available_date", {
+              ascending: true,
+            }),
+
+          supabase
+            .from("bookings")
+            .select(
+              `
+                id,
+                booking_date,
+                booking_time,
+                booking_end_time,
+                status
+              `
+            ),
+        ]);
+
+        if (servicesResponse.error) {
+          throw servicesResponse.error;
+        }
+
+        if (variationsResponse.error) {
+          throw variationsResponse.error;
+        }
+
+        if (availabilityResponse.error) {
+          throw availabilityResponse.error;
+        }
+
+        if (bookingsResponse.error) {
+          throw bookingsResponse.error;
+        }
+
+        setServices(
+          (servicesResponse.data ??
+            []) as Service[]
+        );
+
+        setVariations(
+          (variationsResponse.data ??
+            []) as ServiceVariation[]
+        );
+
+        setAvailability(
+          (availabilityResponse.data ??
+            []) as Availability[]
+        );
+
+        setExistingBookings(
+          (bookingsResponse.data ??
+            []) as ExistingBooking[]
+        );
+      } catch (error) {
+        console.error(
+          "BOOKING DATA FETCH ERROR:",
+          error
+        );
+
+        setError(
+          "Booking information could not be loaded."
+        );
+      } finally {
+        setLoadingData(false);
+      }
+    }
 
     fetchBookingData();
   }, []);
 
-  async function fetchBookingData() {
-    try {
-      setError("");
-
-      const [
-        servicesResult,
-        variationsResult,
-        availabilityResult,
-        bookingsResult,
-      ] = await Promise.all([
-        supabase
-          .from("services")
-          .select(
-            "id, title, description, price, duration"
-          )
-          .order("created_at", {
-            ascending: true,
-          }),
-
-        supabase
-          .from("service_variations")
-          .select(
-            "id, service_id, variation_name, price, duration"
-          )
-          .order("created_at", {
-            ascending: true,
-          }),
-
-        supabase
-          .from("availability")
-          .select(
-            "id, available_date, available_time, start_time, end_time, timezone"
-          )
-          .order("available_date", {
-            ascending: true,
-          })
-          .order("start_time", {
-            ascending: true,
-          }),
-
-        supabase
-          .from("bookings")
-          .select(
-            "id, booking_date, booking_time, booking_end_time, status"
-          )
-          .neq("status", "cancelled")
-          .neq("status", "rejected"),
-      ]);
-
-      if (servicesResult.error) {
-        throw servicesResult.error;
-      }
-
-      if (variationsResult.error) {
-        throw variationsResult.error;
-      }
-
-      if (availabilityResult.error) {
-        throw availabilityResult.error;
-      }
-
-      if (bookingsResult.error) {
-        throw bookingsResult.error;
-      }
-
-      setServices(
-        (servicesResult.data ??
-          []) as Service[]
-      );
-
-      setVariations(
-        (variationsResult.data ??
-          []) as Variation[]
-      );
-
-      setAvailability(
-        (availabilityResult.data ??
-          []) as Availability[]
-      );
-
-      setExistingBookings(
-        (bookingsResult.data ??
-          []) as ExistingBooking[]
-      );
-    } catch (error) {
-      console.error(
-        "BOOKING DATA ERROR:",
-        error
-      );
-
-      setError(
-        "Booking information could not be loaded."
-      );
-    } finally {
-      setDataLoading(false);
-    }
-  }
-
-  const selectedServiceData =
+  const selectedService =
     useMemo(() => {
       return services.find(
         (service) =>
           service.id ===
-          Number(selectedService)
+          Number(selectedServiceId)
       );
-    }, [
-      services,
-      selectedService,
-    ]);
+    }, [services, selectedServiceId]);
 
-  const filteredVariations =
+  const serviceVariations =
     useMemo(() => {
+      if (!selectedService) {
+        return [];
+      }
+
       return variations.filter(
         (variation) =>
           variation.service_id ===
-          Number(selectedService)
+          selectedService.id
       );
-    }, [
-      variations,
-      selectedService,
-    ]);
+    }, [selectedService, variations]);
 
-  const selectedVariationData =
+  const selectedVariation =
     useMemo(() => {
       return variations.find(
         (variation) =>
           variation.id ===
-          Number(selectedVariation)
+          Number(selectedVariationId)
       );
-    }, [
-      variations,
-      selectedVariation,
-    ]);
+    }, [variations, selectedVariationId]);
 
-  const selectedDuration =
-    selectedVariationData?.duration ??
-    selectedServiceData?.duration ??
-    60;
+  const selectedOption:
+    | SelectedOption
+    | null = useMemo(() => {
+    if (!selectedService) {
+      return null;
+    }
 
-  const selectedPrice =
-    selectedVariationData?.price ??
-    selectedServiceData?.price ??
-    0;
-
-  const selectedServiceName =
-    selectedVariationData?.variation_name ??
-    selectedServiceData?.title ??
-    "Selected Service";
-
-  const formattedBookingDate =
-    bookingDate
-      ? formatDateForDatabase(
-          bookingDate
-        )
-      : "";
-
-  const availableDates =
-    useMemo(() => {
-      const today =
-        getTodayDateString();
-
-      return [
-        ...new Set(
-          availability
-            .filter(
-              (slot) =>
-                slot.available_date >=
-                today
-            )
-            .map(
-              (slot) =>
-                slot.available_date
-            )
+    if (selectedVariation) {
+      return {
+        serviceId: selectedService.id,
+        variationId: selectedVariation.id,
+        name: `${selectedService.title} — ${selectedVariation.variation_name}`,
+        description:
+          selectedService.description,
+        price: Number(
+          selectedVariation.price
         ),
-      ];
+        duration:
+          Number(
+            selectedVariation.duration
+          ) || 60,
+        paymentMode:
+          selectedVariation.payment_mode ??
+          selectedService.payment_mode ??
+          "full",
+        depositType:
+          selectedVariation.deposit_type ??
+          selectedService.deposit_type ??
+          "percent",
+        depositValue:
+          Number(
+            selectedVariation.deposit_value ??
+              selectedService.deposit_value ??
+              0
+          ),
+      };
+    }
+
+    return {
+      serviceId: selectedService.id,
+      variationId: null,
+      name: selectedService.title,
+      description:
+        selectedService.description,
+      price: Number(
+        selectedService.price
+      ),
+      duration:
+        Number(
+          selectedService.duration
+        ) || 60,
+      paymentMode:
+        selectedService.payment_mode ??
+        "full",
+      depositType:
+        selectedService.deposit_type ??
+        "percent",
+      depositValue:
+        Number(
+          selectedService.deposit_value ??
+            0
+        ),
+    };
+  }, [selectedService, selectedVariation]);
+
+  const selectedDateKey =
+    selectedDate ? formatDateKey(selectedDate) : "";
+
+  const availableDateKeys =
+    useMemo(() => {
+      return new Set(
+        availability.map(
+          (item) => item.available_date
+        )
+      );
     }, [availability]);
 
-  const availableWindowsForDate =
-    useMemo(() => {
-      if (!formattedBookingDate) {
-        return [];
-      }
-
-      return availability.filter(
-        (slot) =>
-          slot.available_date ===
-          formattedBookingDate
-      );
-    }, [
-      availability,
-      formattedBookingDate,
-    ]);
-
-  const bookedWindowsForDate =
-    useMemo(() => {
-      if (!formattedBookingDate) {
-        return [];
-      }
-
-      return existingBookings.filter(
-        (booking) =>
-          booking.booking_date ===
-            formattedBookingDate &&
-          booking.booking_time
-      );
-    }, [
-      existingBookings,
-      formattedBookingDate,
-    ]);
-
-  const availableTimeOptions =
+  const availableTimes =
     useMemo(() => {
       if (
-        !formattedBookingDate ||
-        !selectedDuration
+        !selectedDateKey ||
+        !selectedOption
       ) {
         return [];
       }
 
-      const options: TimeOption[] = [];
+      const windowsForDate =
+        availability.filter(
+          (item) =>
+            item.available_date ===
+            selectedDateKey
+        );
 
-      availableWindowsForDate.forEach(
-        (window) => {
-          const windowStart =
-            window.start_time ??
-            window.available_time;
+      const bookingsForDate =
+        existingBookings.filter(
+          (booking) =>
+            booking.booking_date ===
+              selectedDateKey &&
+            !isCancelledStatus(
+              booking.status
+            )
+        );
 
-          const windowEnd =
-            window.end_time;
+      const slots = new Set<string>();
 
-          if (
-            !windowStart ||
-            !windowEnd
-          ) {
-            return;
-          }
+      windowsForDate.forEach((window) => {
+        const windowStart =
+          window.start_time ??
+          window.available_time;
 
-          const startMinutes =
-            timeToMinutes(
-              windowStart
+        const windowEnd =
+          window.end_time;
+
+        if (!windowStart || !windowEnd) {
+          return;
+        }
+
+        const startMinutes =
+          timeToMinutes(windowStart);
+
+        const endMinutes =
+          timeToMinutes(windowEnd);
+
+        for (
+          let minutes = startMinutes;
+          minutes + selectedOption.duration <=
+          endMinutes;
+          minutes += 30
+        ) {
+          const start =
+            minutesToTime(minutes);
+
+          const end =
+            addMinutesToTime(
+              start,
+              selectedOption.duration
             );
 
-          const endMinutes =
-            timeToMinutes(
-              windowEnd
-            );
-
-          if (
-            endMinutes <=
-            startMinutes
-          ) {
-            return;
-          }
-
-          for (
-            let current =
-              startMinutes;
-            current +
-              selectedDuration <=
-            endMinutes;
-            current += 30
-          ) {
-            const startTime =
-              minutesToTime(
-                current
-              );
-
-            const endTime =
-              minutesToTime(
-                current +
-                  selectedDuration
-              );
-
-            const hasConflict =
-              bookedWindowsForDate.some(
-                (booking) => {
-                  if (
-                    !booking.booking_time
-                  ) {
-                    return false;
-                  }
-
-                  const existingStart =
-                    timeToMinutes(
-                      booking.booking_time
-                    );
-
-                  const existingEnd =
-                    booking.booking_end_time
-                      ? timeToMinutes(
-                          booking.booking_end_time
-                        )
-                      : existingStart +
-                        60;
-
-                  return (
-                    current <
-                      existingEnd &&
-                    current +
-                      selectedDuration >
-                      existingStart
-                  );
+          const conflicts =
+            bookingsForDate.some(
+              (booking) => {
+                if (
+                  !booking.booking_time ||
+                  !booking.booking_end_time
+                ) {
+                  return false;
                 }
-              );
 
-            if (!hasConflict) {
-              options.push({
-                label: `${formatTime(
-                  startTime
-                )} — ${formatTime(
-                  endTime
-                )}`,
-                value: startTime,
-                endTime,
-                windowId: window.id,
-              });
-            }
+                return bookingOverlaps({
+                  start,
+                  end,
+                  existingStart:
+                    booking.booking_time,
+                  existingEnd:
+                    booking.booking_end_time,
+                });
+              }
+            );
+
+          if (!conflicts) {
+            slots.add(start);
           }
         }
-      );
+      });
 
-      return options;
+      return Array.from(slots).sort();
     }, [
-      availableWindowsForDate,
-      bookedWindowsForDate,
-      formattedBookingDate,
-      selectedDuration,
+      selectedDateKey,
+      selectedOption,
+      availability,
+      existingBookings,
     ]);
 
-  const selectedTimeOption =
-    availableTimeOptions.find(
-      (option) =>
-        option.value ===
-        bookingTime
-    );
+  useEffect(() => {
+    setSelectedVariationId("");
+    setSelectedTime("");
+    setDiscountPreview(null);
+  }, [selectedServiceId]);
 
-  function getTodayDateString() {
-    const today =
-      new Date();
+  useEffect(() => {
+    setSelectedTime("");
+    setDiscountPreview(null);
+  }, [selectedVariationId, selectedDateKey]);
 
-    return formatDateForDatabase(
-      today
-    );
-  }
+  useEffect(() => {
+    async function validateDiscount() {
+      if (!selectedOption) {
+        setDiscountPreview(null);
+        return;
+      }
 
-  function formatDateForDatabase(
-    date: Date
-  ) {
-    const year =
-      date.getFullYear();
+      const code =
+        discountCode.trim().toUpperCase();
 
-    const month =
-      String(
-        date.getMonth() + 1
-      ).padStart(2, "0");
+      if (!code) {
+        setDiscountPreview(null);
+        return;
+      }
 
-    const day =
-      String(
-        date.getDate()
-      ).padStart(2, "0");
+      try {
+        setDiscountChecking(true);
 
-    return `${year}-${month}-${day}`;
-  }
-
-  function timeToMinutes(
-    time: string
-  ) {
-    const [
-      hourString,
-      minuteString,
-    ] = time.split(":");
-
-    return (
-      Number(hourString) * 60 +
-      Number(minuteString ?? "0")
-    );
-  }
-
-  function minutesToTime(
-    totalMinutes: number
-  ) {
-    const hours =
-      Math.floor(
-        totalMinutes / 60
-      ) % 24;
-
-    const minutes =
-      totalMinutes % 60;
-
-    return `${String(hours).padStart(
-      2,
-      "0"
-    )}:${String(minutes).padStart(
-      2,
-      "0"
-    )}`;
-  }
-
-  function formatTime(
-    time: string
-  ) {
-    const [
-      hourString,
-      minuteString,
-    ] = time.split(":");
-
-    const hour =
-      Number(hourString);
-
-    const minute =
-      Number(
-        minuteString ?? "0"
-      );
-
-    if (
-      Number.isNaN(hour) ||
-      Number.isNaN(minute)
-    ) {
-      return time;
-    }
-
-    const suffix =
-      hour >= 12
-        ? "PM"
-        : "AM";
-
-    const displayHour =
-      hour % 12 || 12;
-
-    return `${displayHour}:${String(
-      minute
-    ).padStart(2, "0")} ${suffix}`;
-  }
-
-  function formatDateLabel(
-    date: string
-  ) {
-    const [
-      year,
-      month,
-      day,
-    ] = date.split("-");
-
-    if (
-      !year ||
-      !month ||
-      !day
-    ) {
-      return date;
-    }
-
-    return `${month}/${day}/${year}`;
-  }
-
-  function handleServiceChange(
-    serviceId: string
-  ) {
-    setSelectedService(serviceId);
-    setSelectedVariation("");
-    setBookingDate(null);
-    setBookingTime("");
-  }
-
-  function handleVariationChange(
-    variationId: string
-  ) {
-    setSelectedVariation(variationId);
-    setBookingTime("");
-  }
-
-  function handleDateChange(
-    value: Date
-  ) {
-    setBookingDate(value);
-    setBookingTime("");
-  }
-
-  async function startCheckout() {
-    if (loading) {
-      return;
-    }
-
-    if (
-      !selectedService ||
-      !selectedVariation ||
-      !bookingDate ||
-      !bookingTime ||
-      !customerEmail
-    ) {
-      alert(
-        "Please complete all required fields."
-      );
-
-      return;
-    }
-
-    if (!selectedTimeOption) {
-      alert(
-        "Please select an available time."
-      );
-
-      return;
-    }
-
-    if (!selectedVariationData) {
-      alert(
-        "Please select a service variation."
-      );
-
-      return;
-    }
-
-    if (
-      !customerEmail.includes("@")
-    ) {
-      alert(
-        "Please enter a valid email address."
-      );
-
-      return;
-    }
-
-    try {
-      setLoading(true);
-
-      const {
-        data: { user },
-      } = await supabase.auth.getUser();
-
-      const response =
-        await fetch(
-          "/api/checkout",
+        const response = await fetch(
+          "/api/discounts/validate",
           {
             method: "POST",
-
             headers: {
               "Content-Type":
                 "application/json",
             },
-
             body: JSON.stringify({
-              service_id:
-                Number(
-                  selectedService
-                ),
-
-              variation_id:
-                Number(
-                  selectedVariation
-                ),
-
-              service_name:
-                selectedServiceName,
-
-              price:
-                selectedPrice,
-
-              duration:
-                selectedDuration,
-
-              customer_email:
-                customerEmail,
-
-              booking_date:
-                formattedBookingDate,
-
-              booking_time:
-                bookingTime,
-
-              booking_end_time:
-                selectedTimeOption.endTime,
-
-              notes,
-
-              timezone:
-                Intl.DateTimeFormat()
-                  .resolvedOptions()
-                  .timeZone,
-
-              client_id:
-                user?.id ?? null,
+              code,
+              price: selectedOption.price,
             }),
           }
         );
 
-      const rawResponse =
-        await response.text();
+        const data =
+          (await response.json()) as DiscountPreview;
 
-      let data: {
-        url?: string;
-        error?: string;
-      };
-
-      try {
-        data =
-          JSON.parse(
-            rawResponse
-          );
+        setDiscountPreview(data);
       } catch (error) {
         console.error(
-          "JSON PARSE ERROR:",
+          "DISCOUNT PREVIEW ERROR:",
           error
         );
 
-        console.error(
-          "RAW CHECKOUT RESPONSE:",
-          rawResponse
+        setDiscountPreview({
+          valid: false,
+          message:
+            "Discount could not be checked.",
+        });
+      } finally {
+        setDiscountChecking(false);
+      }
+    }
+
+    const timeout =
+      window.setTimeout(
+        validateDiscount,
+        500
+      );
+
+    return () => {
+      window.clearTimeout(timeout);
+    };
+  }, [
+    discountCode,
+    selectedOption?.price,
+  ]);
+
+  const priceSummary =
+    useMemo(() => {
+      if (!selectedOption) {
+        return null;
+      }
+
+      const originalPrice =
+        roundMoney(selectedOption.price);
+
+      const discountAmount =
+        discountPreview?.valid
+          ? roundMoney(
+              Number(
+                discountPreview.discount_amount ??
+                  0
+              )
+            )
+          : 0;
+
+      const discountedPrice =
+        roundMoney(
+          Math.max(
+            originalPrice - discountAmount,
+            0
+          )
         );
 
-        alert(
-          "Server returned invalid JSON."
+      const amountDueNow =
+        roundMoney(
+          calculateDepositAmount({
+            discountedPrice,
+            paymentMode:
+              selectedOption.paymentMode,
+            depositType:
+              selectedOption.depositType,
+            depositValue:
+              selectedOption.depositValue,
+          })
         );
 
+      const remainingBalance =
+        selectedOption.paymentMode ===
+        "deposit"
+          ? roundMoney(
+              Math.max(
+                discountedPrice -
+                  amountDueNow,
+                0
+              )
+            )
+          : 0;
+
+      return {
+        originalPrice,
+        discountAmount,
+        discountedPrice,
+        amountDueNow,
+        remainingBalance,
+      };
+    }, [selectedOption, discountPreview]);
+
+  async function handleCheckout(
+    event: FormEvent<HTMLFormElement>
+  ) {
+    event.preventDefault();
+
+    try {
+      setSubmitting(true);
+      setError("");
+      setSuccess("");
+
+      if (!selectedOption) {
+        setError(
+          "Please select a service."
+        );
         return;
       }
+
+      if (!selectedDateKey) {
+        setError("Please select a date.");
+        return;
+      }
+
+      if (!selectedTime) {
+        setError("Please select a time.");
+        return;
+      }
+
+      if (!customerEmail.trim()) {
+        setError(
+          "Please enter your email address."
+        );
+        return;
+      }
+
+      if (
+        discountCode.trim() &&
+        discountPreview &&
+        discountPreview.valid === false
+      ) {
+        setError(
+          discountPreview.message ||
+            "Please remove or correct the discount code."
+        );
+        return;
+      }
+
+      const bookingEndTime =
+        addMinutesToTime(
+          selectedTime,
+          selectedOption.duration
+        );
+
+      const response = await fetch(
+        "/api/checkout",
+        {
+          method: "POST",
+          headers: {
+            "Content-Type":
+              "application/json",
+          },
+          body: JSON.stringify({
+            service_id:
+              selectedOption.serviceId,
+            variation_id:
+              selectedOption.variationId,
+            service_name:
+              selectedOption.name,
+            price: selectedOption.price,
+            duration:
+              selectedOption.duration,
+            customer_email:
+              customerEmail.trim(),
+            booking_date:
+              selectedDateKey,
+            booking_time:
+              selectedTime,
+            booking_end_time:
+              bookingEndTime,
+            notes,
+            timezone,
+            client_id: null,
+            discount_code:
+              discountCode
+                .trim()
+                .toUpperCase(),
+          }),
+        }
+      );
+
+      const data =
+        await response.json();
 
       if (!response.ok) {
-        alert(
-          data.error ??
-            "Checkout failed."
+        setError(
+          data.error ||
+            "Checkout could not be started."
         );
-
         return;
       }
 
-      if (data.url) {
-        window.location.href =
-          data.url;
-
+      if (!data.url) {
+        setError(
+          "Stripe checkout URL was not returned."
+        );
         return;
       }
 
-      alert(
-        data.error ??
-          "Checkout failed."
+      setSuccess(
+        "Redirecting to checkout..."
       );
+
+      window.location.href = data.url;
     } catch (error) {
       console.error(
-        "CHECKOUT ERROR:",
+        "CHECKOUT SUBMIT ERROR:",
         error
       );
 
-      alert(
-        "Something went wrong while starting checkout."
+      setError(
+        "Checkout could not be started."
       );
     } finally {
-      setLoading(false);
+      setSubmitting(false);
     }
   }
 
   return (
-    <FadeIn>
-      <section
-        id="booking"
-        className="bg-black py-32 text-white"
-      >
-        <Container>
-          <div className="mb-16 max-w-2xl">
-            <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
-              Booking
-            </p>
+    <section
+      id="booking"
+      className="relative py-24"
+    >
+      <Container>
+        <div className="mx-auto max-w-3xl text-center">
+          <p className="mb-4 text-sm uppercase tracking-[0.35em] text-zinc-500">
+            Book Now
+          </p>
 
-            <h2 className="text-4xl font-bold md:text-5xl">
-              Request A Booking
-            </h2>
+          <h2 className="text-4xl font-bold md:text-6xl">
+            Reserve Your Time
+          </h2>
 
-            <p className="mt-5 text-zinc-400">
-              Select a service, choose an available date and time,
-              then continue to secure checkout.
-            </p>
-          </div>
+          <p className="mt-6 text-lg leading-relaxed text-zinc-400">
+            Select a service, choose an available time, apply a discount code if
+            you have one, and complete checkout securely.
+          </p>
+        </div>
 
-          <div className="grid gap-6 rounded-3xl border border-white/10 bg-white/5 p-8">
+        <form
+          onSubmit={handleCheckout}
+          className="mx-auto mt-14 grid max-w-6xl gap-8 lg:grid-cols-[0.9fr_1.1fr]"
+        >
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-8">
+            <h3 className="text-2xl font-bold">
+              Service Details
+            </h3>
+
             {error && (
-              <div className="rounded-2xl border border-red-500 bg-red-500/10 p-4 text-sm text-red-300">
+              <div className="mt-6 rounded-2xl border border-red-500 bg-red-500/10 p-4 text-red-300">
                 {error}
               </div>
             )}
 
-            {dataLoading ? (
-              <div className="rounded-2xl border border-white/10 bg-black p-6 text-center text-zinc-400">
+            {success && (
+              <div className="mt-6 rounded-2xl border border-green-500 bg-green-500/10 p-4 text-green-300">
+                {success}
+              </div>
+            )}
+
+            {loadingData ? (
+              <div className="mt-8 rounded-2xl border border-white/10 bg-black p-6 text-zinc-500">
                 Loading booking options...
               </div>
             ) : (
-              <>
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm text-zinc-400">
-                      Service
-                    </label>
-
-                    <select
-                      value={
-                        selectedService
-                      }
-                      onChange={(e) =>
-                        handleServiceChange(
-                          e.target
-                            .value
-                        )
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none"
-                    >
-                      <option value="">
-                        Select Service
-                      </option>
-
-                      {services.map(
-                        (service) => (
-                          <option
-                            key={
-                              service.id
-                            }
-                            value={
-                              service.id
-                            }
-                          >
-                            {
-                              service.title
-                            }
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-
-                  <div>
-                    <label className="mb-2 block text-sm text-zinc-400">
-                      Variation
-                    </label>
-
-                    <select
-                      value={
-                        selectedVariation
-                      }
-                      onChange={(e) =>
-                        handleVariationChange(
-                          e.target
-                            .value
-                        )
-                      }
-                      disabled={
-                        !selectedService
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
-                    >
-                      <option value="">
-                        {selectedService
-                          ? "Select Variation"
-                          : "Select Service First"}
-                      </option>
-
-                      {filteredVariations.map(
-                        (variation) => (
-                          <option
-                            key={
-                              variation.id
-                            }
-                            value={
-                              variation.id
-                            }
-                          >
-                            {
-                              variation.variation_name
-                            }
-                            {" — $"}
-                            {variation.price ??
-                              0}
-                            {" — "}
-                            {variation.duration ??
-                              selectedServiceData?.duration ??
-                              60}
-                            {" min"}
-                          </option>
-                        )
-                      )}
-                    </select>
-                  </div>
-                </div>
-
-                {selectedService &&
-                  filteredVariations.length ===
-                    0 && (
-                    <div className="rounded-2xl border border-yellow-500 bg-yellow-500/10 p-4 text-sm text-yellow-300">
-                      This service does not have any variations yet.
-                      Add one in the dashboard before clients book it.
-                    </div>
-                  )}
-
-                {selectedVariationData && (
-                  <div className="rounded-2xl border border-white/10 bg-black/60 p-5">
-                    <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                      Selected Package
-                    </p>
-
-                    <div className="mt-3 flex flex-wrap gap-3 text-sm text-zinc-300">
-                      <span className="rounded-full border border-white/10 px-4 py-2">
-                        {
-                          selectedServiceName
-                        }
-                      </span>
-
-                      <span className="rounded-full border border-green-500 px-4 py-2 text-green-400">
-                        ${selectedPrice}
-                      </span>
-
-                      <span className="rounded-full border border-blue-500 px-4 py-2 text-blue-400">
-                        {selectedDuration} minutes
-                      </span>
-                    </div>
-                  </div>
-                )}
-
-                <div>
-                  <label className="mb-2 block text-sm text-zinc-400">
-                    Date
-                  </label>
-
-                  <div className="rounded-3xl border border-white/10 bg-black p-4">
-                    {mounted ? (
-                      <Calendar
-                        onChange={(value) =>
-                          handleDateChange(
-                            value as Date
-                          )
-                        }
-                        value={
-                          bookingDate
-                        }
-                        minDate={
-                          new Date()
-                        }
-                        tileDisabled={({
-                          date,
-                        }) => {
-                          const formatted =
-                            formatDateForDatabase(
-                              date
-                            );
-
-                          return !availableDates.includes(
-                            formatted
-                          );
-                        }}
-                      />
-                    ) : (
-                      <div className="p-8 text-center text-zinc-500">
-                        Loading calendar...
-                      </div>
-                    )}
-                  </div>
-
-                  {availableDates.length ===
-                    0 && (
-                    <p className="mt-3 text-sm text-yellow-400">
-                      No upcoming availability has been added yet.
-                    </p>
-                  )}
-                </div>
-
-                <div>
-                  <label className="mb-2 block text-sm text-zinc-400">
-                    Available Time
-                  </label>
+              <div className="mt-8 grid gap-5">
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-400">
+                    Service
+                  </span>
 
                   <select
-                    value={bookingTime}
-                    onChange={(e) =>
-                      setBookingTime(
-                        e.target.value
+                    value={selectedServiceId}
+                    onChange={(event) =>
+                      setSelectedServiceId(
+                        event.target.value
                       )
                     }
-                    disabled={
-                      !bookingDate ||
-                      !selectedVariation
-                    }
-                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none disabled:cursor-not-allowed disabled:opacity-50"
+                    className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
                   >
                     <option value="">
-                      {!selectedVariation
-                        ? "Select Variation First"
-                        : !bookingDate
-                          ? "Select Date First"
-                          : "Select Time"}
+                      Select a service
                     </option>
 
-                    {availableTimeOptions.map(
-                      (option) => (
-                        <option
-                          key={`${option.windowId}-${option.value}`}
-                          value={
-                            option.value
-                          }
-                        >
-                          {
-                            option.label
-                          }
-                        </option>
-                      )
-                    )}
-                  </select>
-
-                  {bookingDate &&
-                    selectedVariation &&
-                    availableTimeOptions.length ===
-                      0 && (
-                      <p className="mt-3 text-sm text-yellow-400">
-                        No open times are available for{" "}
-                        {formatDateLabel(
-                          formattedBookingDate
+                    {services.map((service) => (
+                      <option
+                        key={service.id}
+                        value={service.id}
+                      >
+                        {service.title} —{" "}
+                        {formatMoney(
+                          Number(
+                            service.price
+                          )
                         )}
-                        . Try another date.
-                      </p>
-                    )}
-                </div>
+                      </option>
+                    ))}
+                  </select>
+                </label>
 
-                <div className="grid gap-4 md:grid-cols-2">
-                  <div>
-                    <label className="mb-2 block text-sm text-zinc-400">
-                      Email Address
+                {selectedService &&
+                  serviceVariations.length >
+                    0 && (
+                    <label className="grid gap-2">
+                      <span className="text-sm text-zinc-400">
+                        Package / Variation
+                      </span>
+
+                      <select
+                        value={
+                          selectedVariationId
+                        }
+                        onChange={(event) =>
+                          setSelectedVariationId(
+                            event.target.value
+                          )
+                        }
+                        className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
+                      >
+                        <option value="">
+                          Use base service
+                        </option>
+
+                        {serviceVariations.map(
+                          (variation) => (
+                            <option
+                              key={variation.id}
+                              value={variation.id}
+                            >
+                              {
+                                variation.variation_name
+                              }{" "}
+                              —{" "}
+                              {formatMoney(
+                                Number(
+                                  variation.price
+                                )
+                              )}
+                            </option>
+                          )
+                        )}
+                      </select>
                     </label>
+                  )}
 
-                    <input
-                      type="email"
-                      placeholder="client@email.com"
-                      value={
-                        customerEmail
-                      }
-                      onChange={(e) =>
-                        setCustomerEmail(
-                          e.target
-                            .value
-                        )
-                      }
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600"
-                    />
-                  </div>
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-400">
+                    Email
+                  </span>
 
-                  <div>
-                    <label className="mb-2 block text-sm text-zinc-400">
-                      Timezone
-                    </label>
+                  <input
+                    type="email"
+                    value={customerEmail}
+                    onChange={(event) =>
+                      setCustomerEmail(
+                        event.target.value
+                      )
+                    }
+                    placeholder="you@example.com"
+                    className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
+                  />
+                </label>
 
-                    <input
-                      value={
-                        Intl.DateTimeFormat()
-                          .resolvedOptions()
-                          .timeZone
-                      }
-                      readOnly
-                      className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-zinc-400 outline-none"
-                    />
-                  </div>
-                </div>
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-400">
+                    Discount Code
+                  </span>
 
-                <div>
-                  <label className="mb-2 block text-sm text-zinc-400">
-                    Additional Notes
-                  </label>
+                  <input
+                    value={discountCode}
+                    onChange={(event) =>
+                      setDiscountCode(
+                        event.target.value.toUpperCase()
+                      )
+                    }
+                    placeholder="LAUNCH10"
+                    className="rounded-2xl border border-white/10 bg-black px-4 py-3 uppercase text-white outline-none transition focus:border-white/40"
+                  />
+
+                  {discountChecking && (
+                    <p className="text-sm text-zinc-500">
+                      Checking discount...
+                    </p>
+                  )}
+
+                  {discountPreview && (
+                    <p
+                      className={`text-sm ${
+                        discountPreview.valid
+                          ? "text-green-300"
+                          : "text-red-300"
+                      }`}
+                    >
+                      {discountPreview.message}
+                    </p>
+                  )}
+                </label>
+
+                <label className="grid gap-2">
+                  <span className="text-sm text-zinc-400">
+                    Notes
+                  </span>
 
                   <textarea
-                    placeholder="Tell us anything helpful about your project..."
                     value={notes}
-                    onChange={(e) =>
+                    onChange={(event) =>
                       setNotes(
-                        e.target.value
+                        event.target.value
                       )
                     }
                     rows={5}
-                    className="w-full rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600"
+                    placeholder="Anything we should know before your appointment?"
+                    className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
                   />
-                </div>
+                </label>
 
-                <button
-                  onClick={startCheckout}
-                  disabled={
-                    loading ||
-                    !selectedService ||
-                    !selectedVariation ||
-                    !bookingDate ||
-                    !bookingTime ||
-                    !customerEmail
-                  }
-                  className="rounded-full bg-white px-6 py-3 font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {loading
-                    ? "Redirecting..."
-                    : "Continue To Payment"}
-                </button>
-              </>
+                {selectedOption &&
+                  priceSummary && (
+                    <div className="rounded-2xl border border-white/10 bg-black p-5">
+                      <p className="text-sm uppercase tracking-[0.25em] text-zinc-500">
+                        Payment Summary
+                      </p>
+
+                      <div className="mt-4 grid gap-2 text-sm text-zinc-300">
+                        <div className="flex justify-between gap-4">
+                          <span>
+                            Original Price
+                          </span>
+                          <span>
+                            {formatMoney(
+                              priceSummary.originalPrice
+                            )}
+                          </span>
+                        </div>
+
+                        {priceSummary.discountAmount >
+                          0 && (
+                          <div className="flex justify-between gap-4 text-green-300">
+                            <span>
+                              Discount
+                            </span>
+                            <span>
+                              -
+                              {formatMoney(
+                                priceSummary.discountAmount
+                              )}
+                            </span>
+                          </div>
+                        )}
+
+                        <div className="flex justify-between gap-4">
+                          <span>
+                            Adjusted Price
+                          </span>
+                          <span>
+                            {formatMoney(
+                              priceSummary.discountedPrice
+                            )}
+                          </span>
+                        </div>
+
+                        <div className="mt-3 border-t border-white/10 pt-3">
+                          {selectedOption.paymentMode ===
+                          "deposit" ? (
+                            <>
+                              <div className="flex justify-between gap-4 text-yellow-300">
+                                <span>
+                                  Deposit Due Now
+                                </span>
+                                <span>
+                                  {formatMoney(
+                                    priceSummary.amountDueNow
+                                  )}
+                                </span>
+                              </div>
+
+                              <div className="mt-2 flex justify-between gap-4 text-blue-300">
+                                <span>
+                                  Remaining Balance
+                                </span>
+                                <span>
+                                  {formatMoney(
+                                    priceSummary.remainingBalance
+                                  )}
+                                </span>
+                              </div>
+
+                              <p className="mt-3 text-xs leading-relaxed text-zinc-500">
+                                The remaining balance is tracked in your booking
+                                record and can be collected after the project is
+                                completed.
+                              </p>
+                            </>
+                          ) : (
+                            <div className="flex justify-between gap-4 text-green-300">
+                              <span>
+                                Full Payment Due Now
+                              </span>
+                              <span>
+                                {formatMoney(
+                                  priceSummary.amountDueNow
+                                )}
+                              </span>
+                            </div>
+                          )}
+                        </div>
+                      </div>
+                    </div>
+                  )}
+              </div>
             )}
           </div>
-        </Container>
-      </section>
-    </FadeIn>
+
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 p-8">
+            <h3 className="text-2xl font-bold">
+              Choose Date + Time
+            </h3>
+
+            <div className="mt-8 overflow-hidden rounded-3xl border border-white/10 bg-black p-4 text-black">
+              {mounted && (
+                <Calendar
+                  onChange={(value) => {
+                    if (value instanceof Date) {
+                      setSelectedDate(value);
+                    }
+                  }}
+                  value={selectedDate}
+                  tileDisabled={({ date }) => {
+                    const dateKey =
+                      formatDateKey(date);
+
+                    return !availableDateKeys.has(
+                      dateKey
+                    );
+                  }}
+                />
+              )}
+            </div>
+
+            <div className="mt-8">
+              <p className="mb-3 text-sm uppercase tracking-[0.25em] text-zinc-500">
+                Available Times
+              </p>
+
+              {!selectedDate ? (
+                <div className="rounded-2xl border border-white/10 bg-black p-5 text-zinc-500">
+                  Select a date first.
+                </div>
+              ) : availableTimes.length === 0 ? (
+                <div className="rounded-2xl border border-white/10 bg-black p-5 text-zinc-500">
+                  No available times for this date and service duration.
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-3 md:grid-cols-3">
+                  {availableTimes.map((time) => (
+                    <button
+                      key={time}
+                      type="button"
+                      onClick={() =>
+                        setSelectedTime(time)
+                      }
+                      className={`rounded-2xl border px-4 py-3 text-sm transition ${
+                        selectedTime === time
+                          ? "border-white bg-white text-black"
+                          : "border-white/10 bg-black text-zinc-300 hover:bg-white/10"
+                      }`}
+                    >
+                      {formatDisplayTime(time)}
+                    </button>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            {selectedDate &&
+              selectedTime &&
+              selectedOption && (
+                <div className="mt-8 rounded-2xl border border-white/10 bg-black p-5">
+                  <p className="text-sm uppercase tracking-[0.25em] text-zinc-500">
+                    Booking Preview
+                  </p>
+
+                  <h4 className="mt-3 text-xl font-semibold">
+                    {selectedOption.name}
+                  </h4>
+
+                  <div className="mt-4 grid gap-2 text-sm text-zinc-400">
+                    <p>
+                      Date: {selectedDateKey}
+                    </p>
+
+                    <p>
+                      Time:{" "}
+                      {formatDisplayTime(
+                        selectedTime
+                      )}{" "}
+                      —{" "}
+                      {formatDisplayTime(
+                        addMinutesToTime(
+                          selectedTime,
+                          selectedOption.duration
+                        )
+                      )}
+                    </p>
+
+                    <p>
+                      Duration:{" "}
+                      {selectedOption.duration} minutes
+                    </p>
+
+                    <p>
+                      Timezone: {timezone}
+                    </p>
+                  </div>
+                </div>
+              )}
+
+            <button
+              type="submit"
+              disabled={
+                submitting ||
+                loadingData ||
+                !selectedOption ||
+                !selectedDate ||
+                !selectedTime
+              }
+              className="mt-8 w-full rounded-full bg-white px-6 py-4 font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+            >
+              {submitting
+                ? "Starting Checkout..."
+                : selectedOption?.paymentMode ===
+                    "deposit"
+                  ? "Pay Deposit"
+                  : "Continue to Checkout"}
+            </button>
+          </div>
+        </form>
+      </Container>
+    </section>
   );
 }

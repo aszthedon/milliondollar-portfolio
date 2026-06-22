@@ -25,6 +25,16 @@ interface Booking {
   calendar_event_id: string | null;
   timezone: string | null;
   created_at: string | null;
+
+  price_paid: number | null;
+  original_price: number | null;
+  discount_code: string | null;
+  discount_amount: number | null;
+  amount_due_now: number | null;
+  remaining_balance: number | null;
+  payment_mode: string | null;
+  deposit_amount: number | null;
+  balance_status: string | null;
 }
 
 interface RescheduleInput {
@@ -89,7 +99,16 @@ export default function DashboardBookingsPage() {
               meeting_link,
               calendar_event_id,
               timezone,
-              created_at
+              created_at,
+              price_paid,
+              original_price,
+              discount_code,
+              discount_amount,
+              amount_due_now,
+              remaining_balance,
+              payment_mode,
+              deposit_amount,
+              balance_status
             `
           )
           .order("created_at", {
@@ -109,9 +128,7 @@ export default function DashboardBookingsPage() {
         return;
       }
 
-      if (data) {
-        setBookings(data as Booking[]);
-      }
+      setBookings((data ?? []) as Booking[]);
     } catch (error) {
       console.error(error);
 
@@ -138,8 +155,16 @@ export default function DashboardBookingsPage() {
           const status =
             booking.status ?? "";
 
+          const discountCode =
+            booking.discount_code ?? "";
+
           const matchesSearch =
             email
+              .toLowerCase()
+              .includes(
+                searchTerm.toLowerCase()
+              ) ||
+            discountCode
               .toLowerCase()
               .includes(
                 searchTerm.toLowerCase()
@@ -164,6 +189,63 @@ export default function DashboardBookingsPage() {
       statusFilter,
     ]);
 
+  function toNumber(value: number | null) {
+    const number = Number(value ?? 0);
+
+    return Number.isFinite(number)
+      ? number
+      : 0;
+  }
+
+  function formatMoney(
+    value: number | null
+  ) {
+    return `$${toNumber(value).toFixed(2)}`;
+  }
+
+  function getCollectedAmount(
+    booking: Booking
+  ) {
+    return (
+      toNumber(booking.price_paid) ||
+      toNumber(booking.amount_due_now)
+    );
+  }
+
+  const totalCollected =
+    useMemo(() => {
+      return bookings.reduce(
+        (total, booking) =>
+          total +
+          getCollectedAmount(booking),
+        0
+      );
+    }, [bookings]);
+
+  const totalBalanceDue =
+    useMemo(() => {
+      return bookings.reduce(
+        (total, booking) => {
+          if (
+            booking.balance_status ===
+              "balance_paid" ||
+            booking.balance_status ===
+              "not_applicable"
+          ) {
+            return total;
+          }
+
+          return (
+            total +
+            toNumber(
+              booking.remaining_balance
+            )
+          );
+        },
+        0
+      );
+    }, [bookings]);
+
   function getStatusCount(
     status: string
   ) {
@@ -180,6 +262,21 @@ export default function DashboardBookingsPage() {
       (booking) =>
         booking.payment_status ===
         status
+    ).length;
+  }
+
+  function getDepositCount() {
+    return bookings.filter(
+      (booking) =>
+        booking.payment_mode ===
+        "deposit"
+    ).length;
+  }
+
+  function getDiscountCount() {
+    return bookings.filter(
+      (booking) =>
+        Boolean(booking.discount_code)
     ).length;
   }
 
@@ -331,12 +428,36 @@ export default function DashboardBookingsPage() {
         return;
       }
 
+      const updatePayload: {
+        status: string;
+        balance_status?: string;
+      } = {
+        status,
+      };
+
+      const booking = bookings.find(
+        (booking) =>
+          booking.id === bookingId
+      );
+
+      if (
+        status === "completed" &&
+        booking?.payment_mode ===
+          "deposit" &&
+        toNumber(
+          booking.remaining_balance
+        ) > 0 &&
+        booking.balance_status !==
+          "balance_paid"
+      ) {
+        updatePayload.balance_status =
+          "ready_to_collect";
+      }
+
       const { error } =
         await supabase
           .from("bookings")
-          .update({
-            status,
-          })
+          .update(updatePayload)
           .eq(
             "id",
             bookingId
@@ -354,6 +475,51 @@ export default function DashboardBookingsPage() {
         error instanceof Error
           ? error.message
           : "Action failed."
+      );
+    } finally {
+      setLoadingId(null);
+    }
+  }
+
+  async function markBalanceStatus(
+    booking: Booking,
+    balanceStatus: string
+  ) {
+    try {
+      setLoadingId(booking.id);
+
+      const updatePayload: {
+        balance_status: string;
+        remaining_balance?: number;
+      } = {
+        balance_status: balanceStatus,
+      };
+
+      if (
+        balanceStatus ===
+        "balance_paid"
+      ) {
+        updatePayload.remaining_balance = 0;
+      }
+
+      const { error } =
+        await supabase
+          .from("bookings")
+          .update(updatePayload)
+          .eq("id", booking.id);
+
+      if (error) {
+        throw error;
+      }
+
+      await fetchBookings();
+    } catch (error) {
+      console.error(error);
+
+      alert(
+        error instanceof Error
+          ? error.message
+          : "Balance status could not be updated."
       );
     } finally {
       setLoadingId(null);
@@ -460,6 +626,25 @@ export default function DashboardBookingsPage() {
     return "border-yellow-500 text-yellow-400";
   }
 
+  function balanceClass(
+    status: string | null
+  ) {
+    if (
+      status === "balance_paid" ||
+      status === "not_applicable"
+    ) {
+      return "border-green-500 text-green-400";
+    }
+
+    if (
+      status === "ready_to_collect"
+    ) {
+      return "border-blue-500 text-blue-400";
+    }
+
+    return "border-yellow-500 text-yellow-400";
+  }
+
   function downloadInvoice(
     booking: Booking
   ) {
@@ -471,6 +656,18 @@ export default function DashboardBookingsPage() {
         ? booking.notes
         : "No notes provided.";
 
+    const originalPrice =
+      toNumber(booking.original_price);
+
+    const discountAmount =
+      toNumber(booking.discount_amount);
+
+    const amountPaid =
+      getCollectedAmount(booking);
+
+    const remainingBalance =
+      toNumber(booking.remaining_balance);
+
     doc.setFontSize(24);
     doc.text(
       "Invoice",
@@ -479,30 +676,30 @@ export default function DashboardBookingsPage() {
     );
 
     doc.setFontSize(12);
-    doc.text(
-      `Booking ID: ${booking.id}`,
-      20,
-      50
-    );
 
-    doc.text(
+    let y = 50;
+
+    const writeLine = (text: string) => {
+      doc.text(text, 20, y);
+      y += 15;
+    };
+
+    writeLine(`Booking ID: ${booking.id}`);
+
+    writeLine(
       `Client: ${
         booking.customer_email ??
         "No email"
-      }`,
-      20,
-      65
+      }`
     );
 
-    doc.text(
+    writeLine(
       `Booking Date: ${formatDate(
         booking.booking_date
-      )}`,
-      20,
-      80
+      )}`
     );
 
-    doc.text(
+    writeLine(
       `Booking Time: ${formatTime(
         booking.booking_time
       )}${
@@ -511,51 +708,92 @@ export default function DashboardBookingsPage() {
               booking.booking_end_time
             )}`
           : ""
-      }`,
-      20,
-      95
+      }`
     );
 
-    doc.text(
+    writeLine(
       `Booking Status: ${
         booking.status ??
         "unknown"
-      }`,
-      20,
-      110
+      }`
     );
 
-    doc.text(
+    writeLine(
       `Payment Status: ${
         booking.payment_status ??
         "unknown"
-      }`,
-      20,
-      125
+      }`
     );
 
-    doc.text(
+    writeLine(
+      `Payment Mode: ${
+        booking.payment_mode ===
+        "deposit"
+          ? "Deposit"
+          : "Full Payment"
+      }`
+    );
+
+    writeLine(
+      `Original Price: ${formatMoney(
+        originalPrice
+      )}`
+    );
+
+    writeLine(
+      `Discount Code: ${
+        booking.discount_code ??
+        "None"
+      }`
+    );
+
+    writeLine(
+      `Discount Amount: ${formatMoney(
+        discountAmount
+      )}`
+    );
+
+    writeLine(
+      `Amount Paid Now: ${formatMoney(
+        amountPaid
+      )}`
+    );
+
+    writeLine(
+      `Remaining Balance: ${formatMoney(
+        remainingBalance
+      )}`
+    );
+
+    writeLine(
+      `Balance Status: ${
+        booking.balance_status ??
+        "not_applicable"
+      }`
+    );
+
+    writeLine(
       `Timezone: ${
         booking.timezone ??
         "Not set"
-      }`,
-      20,
-      140
+      }`
     );
 
     if (booking.meeting_link) {
-      doc.text(
-        `Meeting Link: ${booking.meeting_link}`,
-        20,
-        155
+      writeLine(
+        `Meeting Link: ${booking.meeting_link}`
       );
     }
+
+    y += 5;
 
     doc.text(
       "Notes:",
       20,
-      175
+      y
     );
+
+    y += 10;
 
     const wrappedNotes =
       doc.splitTextToSize(
@@ -566,7 +804,7 @@ export default function DashboardBookingsPage() {
     doc.text(
       wrappedNotes,
       20,
-      185
+      y
     );
 
     doc.save(
@@ -603,9 +841,7 @@ export default function DashboardBookingsPage() {
           </h1>
 
           <p className="mt-4 max-w-2xl text-zinc-400">
-            Review client requests, approve bookings,
-            reschedule appointments, reject requests,
-            and export booking invoices.
+            Review bookings, payment status, deposits, discounts, balances, calendar links, and invoices.
           </p>
         </div>
 
@@ -632,7 +868,7 @@ export default function DashboardBookingsPage() {
         </div>
       )}
 
-      <section className="mb-10 grid gap-6 md:grid-cols-2 xl:grid-cols-6">
+      <section className="mb-10 grid gap-6 md:grid-cols-2 xl:grid-cols-8">
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
             Total
@@ -649,9 +885,7 @@ export default function DashboardBookingsPage() {
           </p>
 
           <h2 className="mt-3 text-4xl font-bold">
-            {getStatusCount(
-              "pending"
-            )}
+            {getStatusCount("pending")}
           </h2>
         </div>
 
@@ -661,21 +895,7 @@ export default function DashboardBookingsPage() {
           </p>
 
           <h2 className="mt-3 text-4xl font-bold">
-            {getStatusCount(
-              "approved"
-            )}
-          </h2>
-        </div>
-
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
-          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-            Completed
-          </p>
-
-          <h2 className="mt-3 text-4xl font-bold">
-            {getStatusCount(
-              "completed"
-            )}
+            {getStatusCount("approved")}
           </h2>
         </div>
 
@@ -685,21 +905,47 @@ export default function DashboardBookingsPage() {
           </p>
 
           <h2 className="mt-3 text-4xl font-bold">
-            {getPaymentCount(
-              "paid"
-            )}
+            {getPaymentCount("paid")}
           </h2>
         </div>
 
         <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
           <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-            Pending Pay
+            Deposits
           </p>
 
           <h2 className="mt-3 text-4xl font-bold">
-            {getPaymentCount(
-              "pending"
-            )}
+            {getDepositCount()}
+          </h2>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+            Discounts
+          </p>
+
+          <h2 className="mt-3 text-4xl font-bold">
+            {getDiscountCount()}
+          </h2>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+            Collected
+          </p>
+
+          <h2 className="mt-3 text-3xl font-bold">
+            ${totalCollected.toFixed(2)}
+          </h2>
+        </div>
+
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
+            Balance Due
+          </p>
+
+          <h2 className="mt-3 text-3xl font-bold">
+            ${totalBalanceDue.toFixed(2)}
           </h2>
         </div>
       </section>
@@ -708,11 +954,11 @@ export default function DashboardBookingsPage() {
         <div className="grid gap-4 md:grid-cols-[1fr_240px]">
           <input
             type="text"
-            placeholder="Search by email or booking ID..."
+            placeholder="Search by email, booking ID, or discount code..."
             value={searchTerm}
-            onChange={(e) =>
+            onChange={(event) =>
               setSearchTerm(
-                e.target.value
+                event.target.value
               )
             }
             className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600"
@@ -720,9 +966,9 @@ export default function DashboardBookingsPage() {
 
           <select
             value={statusFilter}
-            onChange={(e) =>
+            onChange={(event) =>
               setStatusFilter(
-                e.target.value
+                event.target.value
               )
             }
             className="rounded-xl border border-white/10 bg-black px-4 py-3 text-white outline-none"
@@ -753,6 +999,30 @@ export default function DashboardBookingsPage() {
                 date: "",
                 time: "",
               };
+
+            const paymentMode =
+              booking.payment_mode ===
+              "deposit"
+                ? "Deposit"
+                : "Full Payment";
+
+            const amountPaid =
+              getCollectedAmount(booking);
+
+            const originalPrice =
+              toNumber(
+                booking.original_price
+              );
+
+            const discountAmount =
+              toNumber(
+                booking.discount_amount
+              );
+
+            const remainingBalance =
+              toNumber(
+                booking.remaining_balance
+              );
 
             return (
               <div
@@ -813,11 +1083,88 @@ export default function DashboardBookingsPage() {
                           "unknown"}
                       </span>
 
+                      <span className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300">
+                        {paymentMode}
+                      </span>
+
+                      {booking.payment_mode ===
+                        "deposit" && (
+                        <span
+                          className={`rounded-full border px-4 py-2 text-sm capitalize ${balanceClass(
+                            booking.balance_status
+                          )}`}
+                        >
+                          Balance:{" "}
+                          {booking.balance_status ??
+                            "balance_due"}
+                        </span>
+                      )}
+
                       {booking.timezone && (
                         <span className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300">
                           {booking.timezone}
                         </span>
                       )}
+                    </div>
+
+                    <div className="mt-6 grid gap-4 md:grid-cols-2 xl:grid-cols-4">
+                      <div className="rounded-2xl border border-white/10 bg-black/40 p-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                          Original Price
+                        </p>
+
+                        <p className="mt-2 text-2xl font-bold">
+                          {formatMoney(
+                            originalPrice
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/40 p-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                          Discount
+                        </p>
+
+                        <p className="mt-2 text-2xl font-bold text-green-300">
+                          -
+                          {formatMoney(
+                            discountAmount
+                          )}
+                        </p>
+
+                        {booking.discount_code && (
+                          <p className="mt-2 text-sm text-zinc-400">
+                            Code:{" "}
+                            {
+                              booking.discount_code
+                            }
+                          </p>
+                        )}
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/40 p-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                          Paid Now
+                        </p>
+
+                        <p className="mt-2 text-2xl font-bold text-yellow-300">
+                          {formatMoney(
+                            amountPaid
+                          )}
+                        </p>
+                      </div>
+
+                      <div className="rounded-2xl border border-white/10 bg-black/40 p-5">
+                        <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                          Remaining
+                        </p>
+
+                        <p className="mt-2 text-2xl font-bold text-blue-300">
+                          {formatMoney(
+                            remainingBalance
+                          )}
+                        </p>
+                      </div>
                     </div>
 
                     {booking.notes && (
@@ -867,11 +1214,11 @@ export default function DashboardBookingsPage() {
                       <input
                         type="date"
                         value={input.date}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           updateRescheduleInput(
                             booking.id,
                             "date",
-                            e.target.value
+                            event.target.value
                           )
                         }
                         className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white"
@@ -880,11 +1227,11 @@ export default function DashboardBookingsPage() {
                       <input
                         type="time"
                         value={input.time}
-                        onChange={(e) =>
+                        onChange={(event) =>
                           updateRescheduleInput(
                             booking.id,
                             "time",
-                            e.target.value
+                            event.target.value
                           )
                         }
                         className="rounded-xl border border-white/10 bg-black px-4 py-3 text-sm text-white"
@@ -939,6 +1286,44 @@ export default function DashboardBookingsPage() {
                       >
                         Mark Completed
                       </button>
+
+                      {booking.payment_mode ===
+                        "deposit" &&
+                        remainingBalance > 0 && (
+                          <>
+                            <button
+                              disabled={
+                                loadingId ===
+                                booking.id
+                              }
+                              onClick={() =>
+                                markBalanceStatus(
+                                  booking,
+                                  "ready_to_collect"
+                                )
+                              }
+                              className="rounded-full border border-purple-500 px-4 py-2 text-sm text-purple-400 transition hover:bg-purple-500 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Mark Ready To Collect
+                            </button>
+
+                            <button
+                              disabled={
+                                loadingId ===
+                                booking.id
+                              }
+                              onClick={() =>
+                                markBalanceStatus(
+                                  booking,
+                                  "balance_paid"
+                                )
+                              }
+                              className="rounded-full border border-cyan-500 px-4 py-2 text-sm text-cyan-400 transition hover:bg-cyan-500 hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
+                            >
+                              Mark Balance Paid
+                            </button>
+                          </>
+                        )}
 
                       <button
                         disabled={
