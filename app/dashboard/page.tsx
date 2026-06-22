@@ -47,7 +47,6 @@ export default function DashboardPage() {
 
     if (bookingsError) {
       console.error("BOOKINGS FETCH ERROR:", bookingsError);
-
       setError("Some dashboard data could not be loaded.");
     } else if (bookingsData) {
       setBookings(bookingsData as Booking[]);
@@ -86,7 +85,6 @@ export default function DashboardPage() {
       }
 
       await fetchDashboardData();
-
       setLoading(false);
     }
 
@@ -95,7 +93,6 @@ export default function DashboardPage() {
 
   async function handleLogout() {
     await supabase.auth.signOut();
-
     router.push("/login");
   }
 
@@ -121,7 +118,6 @@ export default function DashboardPage() {
 
   function formatDate(date: string | null) {
     if (!date) return "Not set";
-
     return date;
   }
 
@@ -211,10 +207,22 @@ export default function DashboardPage() {
 
   const quickActions = [
     {
+      title: "Launch Checklist",
+      description:
+        "Track final testing, deployment, and launch preparation tasks.",
+      href: "/dashboard/launch",
+    },
+    {
       title: "Manage Bookings",
       description:
         "Approve, reject, reschedule, and review booking requests.",
       href: "/dashboard/bookings",
+    },
+    {
+      title: "Analytics",
+      description:
+        "Review revenue, paid bookings, conversion, and booking activity.",
+      href: "/dashboard/analytics",
     },
     {
       title: "Manage Services",
@@ -223,20 +231,39 @@ export default function DashboardPage() {
       href: "/dashboard/services",
     },
     {
+      title: "Service Variations",
+      description:
+        "Manage service packages, upgraded options, prices, and durations.",
+      href: "/dashboard/variations",
+    },
+    {
       title: "Manage Availability",
       description:
         "Add availability windows for bookable days and times.",
       href: "/dashboard/availability",
     },
     {
-      title: "Gallery",
-      description: "Upload and manage portfolio images.",
-      href: "/dashboard/gallery",
-    },
-    {
       title: "Site Settings",
       description: "Edit homepage, branding content, and header buttons.",
       href: "/dashboard/settings",
+    },
+    {
+      title: "SEO Settings",
+      description:
+        "Edit page title, search description, keywords, and social preview.",
+      href: "/dashboard/seo",
+    },
+    {
+      title: "Navigation",
+      description:
+        "Edit public menu links, labels, order, visibility, and external links.",
+      href: "/dashboard/navigation",
+    },
+    {
+      title: "Footer",
+      description:
+        "Edit footer branding, contact details, social links, and copyright.",
+      href: "/dashboard/footer",
     },
     {
       title: "CTA Section",
@@ -245,10 +272,10 @@ export default function DashboardPage() {
       href: "/dashboard/cta",
     },
     {
-      title: "Navigation",
+      title: "Contact",
       description:
-        "Edit public menu links, labels, order, visibility, and external links.",
-      href: "/dashboard/navigation",
+        "Edit the public contact form and review incoming inquiries.",
+      href: "/dashboard/contact",
     },
     {
       title: "Process",
@@ -269,16 +296,9 @@ export default function DashboardPage() {
       href: "/dashboard/testimonials",
     },
     {
-      title: "Analytics",
-      description:
-        "Review revenue, paid bookings, conversion, and booking activity.",
-      href: "/dashboard/analytics",
-    },
-    {
-      title: "Service Variations",
-      description:
-        "Manage service packages, upgraded options, prices, and durations.",
-      href: "/dashboard/variations",
+      title: "Gallery",
+      description: "Upload and manage portfolio images.",
+      href: "/dashboard/gallery",
     },
     {
       title: "Messages",
@@ -329,10 +349,10 @@ export default function DashboardPage() {
           <h1 className="text-5xl font-bold">Dashboard</h1>
 
           <p className="mt-4 max-w-2xl text-zinc-400">
-            Manage bookings, services, availability, gallery content, site
-            settings, CTA content, navigation, process steps, FAQs,
-            testimonials, analytics, and client activity from one central admin
-            hub.
+            Manage bookings, services, availability, launch prep, SEO, contact
+            inquiries, footer content, CTA content, navigation, process steps,
+            FAQs, testimonials, analytics, and client activity from one central
+            admin hub.
           </p>
         </div>
 

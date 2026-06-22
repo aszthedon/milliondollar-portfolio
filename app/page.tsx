@@ -9,6 +9,7 @@ import Gallery from "@/components/sections/Gallery";
 import Booking from "@/components/sections/Booking";
 import Testimonials from "@/components/sections/Testimonials";
 import FAQ from "@/components/sections/FAQ";
+import Contact from "@/components/sections/Contact";
 import CTA from "@/components/sections/CTA";
 
 export default function Home() {
@@ -35,6 +36,8 @@ export default function Home() {
       <Testimonials />
 
       <FAQ />
+
+      <Contact />
 
       <CTA />
 
