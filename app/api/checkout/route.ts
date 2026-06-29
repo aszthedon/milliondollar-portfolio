@@ -56,7 +56,7 @@ function calculateDiscountAmount({
   return Math.min((originalPrice * discountValue) / 100, originalPrice);
 }
 
-function calculateDepositAmount({
+function calculateDepositBaseAmount({
   discountedPrice,
   paymentMode,
   depositType,
@@ -78,6 +78,36 @@ function calculateDepositAmount({
   return Math.min((discountedPrice * depositValue) / 100, discountedPrice);
 }
 
+async function upsertCrmClient(customerEmail: string) {
+  const cleanEmail = customerEmail.trim().toLowerCase();
+
+  if (!cleanEmail) {
+    return null;
+  }
+
+  const { data, error } = await supabaseAdmin
+    .from("crm_clients")
+    .upsert(
+      {
+        email: cleanEmail,
+        source: "booking",
+        last_contacted_at: new Date().toISOString(),
+      },
+      {
+        onConflict: "email",
+      }
+    )
+    .select("id")
+    .single();
+
+  if (error) {
+    console.error("CRM CLIENT UPSERT ERROR:", error);
+    return null;
+  }
+
+  return data?.id ?? null;
+}
+
 export async function POST(request: Request) {
   try {
     const body = await request.json();
@@ -96,17 +126,24 @@ export async function POST(request: Request) {
       timezone,
       client_id,
       discount_code,
+      tip_amount,
     } = body;
 
     const numericPrice = Number(price);
     const numericDuration = Number(duration);
+    const numericTipAmount = Math.max(Number(tip_amount ?? 0), 0);
 
     const serviceId = service_id ? Number(service_id) : null;
     const variationId = variation_id ? Number(variation_id) : null;
 
+    const cleanCustomerEmail =
+      typeof customer_email === "string"
+        ? customer_email.trim().toLowerCase()
+        : "";
+
     if (
       !service_name ||
-      !customer_email ||
+      !cleanCustomerEmail ||
       !booking_date ||
       !booking_time ||
       !timezone ||
@@ -122,6 +159,8 @@ export async function POST(request: Request) {
         }
       );
     }
+
+    const crmClientId = await upsertCrmClient(cleanCustomerEmail);
 
     const bookingEndTime =
       booking_end_time ??
@@ -290,7 +329,9 @@ export async function POST(request: Request) {
     }
 
     const cleanDiscountCode =
-      typeof discount_code === "string" ? discount_code.trim().toUpperCase() : "";
+      typeof discount_code === "string"
+        ? discount_code.trim().toUpperCase()
+        : "";
 
     let appliedDiscountCode = "";
     let discountAmount = 0;
@@ -378,9 +419,10 @@ export async function POST(request: Request) {
     }
 
     const discountedPrice = roundMoney(Math.max(numericPrice - discountAmount, 0));
+    const tipAmount = roundMoney(numericTipAmount);
 
-    const amountDueNow = roundMoney(
-      calculateDepositAmount({
+    const depositBaseAmount = roundMoney(
+      calculateDepositBaseAmount({
         discountedPrice,
         paymentMode,
         depositType,
@@ -388,12 +430,13 @@ export async function POST(request: Request) {
       })
     );
 
-    const depositAmount =
-      paymentMode === "deposit" ? amountDueNow : 0;
+    const amountDueNow = roundMoney(depositBaseAmount + tipAmount);
+
+    const depositAmount = paymentMode === "deposit" ? depositBaseAmount : 0;
 
     const remainingBalance =
       paymentMode === "deposit"
-        ? roundMoney(Math.max(discountedPrice - amountDueNow, 0))
+        ? roundMoney(Math.max(discountedPrice - depositBaseAmount, 0))
         : 0;
 
     if (amountDueNow <= 0) {
@@ -407,16 +450,15 @@ export async function POST(request: Request) {
       );
     }
 
-    const balanceStatus =
-      remainingBalance > 0 ? "balance_due" : "not_applicable";
+    const balanceStatus = remainingBalance > 0 ? "balance_due" : "not_applicable";
 
-    const cleanNotes =
-      typeof notes === "string" ? notes.trim() : "";
+    const cleanNotes = typeof notes === "string" ? notes.trim() : "";
 
     const normalizedNotes = [
       cleanNotes,
       variationId ? `Variation ID: ${variationId}` : "",
       appliedDiscountCode ? `Discount Code: ${appliedDiscountCode}` : "",
+      tipAmount > 0 ? `Tip Added: $${tipAmount.toFixed(2)}` : "",
       paymentMode === "deposit"
         ? `Deposit paid upfront. Remaining balance due after project completion: $${remainingBalance.toFixed(2)}`
         : "",
@@ -428,8 +470,9 @@ export async function POST(request: Request) {
       .from("bookings")
       .insert({
         client_id: client_id || null,
+        crm_client_id: crmClientId,
         service_id: serviceId,
-        customer_email,
+        customer_email: cleanCustomerEmail,
         booking_date,
         booking_time,
         booking_end_time: bookingEndTime,
@@ -445,6 +488,7 @@ export async function POST(request: Request) {
         remaining_balance: remainingBalance,
         payment_mode: paymentMode,
         deposit_amount: depositAmount,
+        tip_amount: tipAmount,
         balance_status: balanceStatus,
       })
       .select()
@@ -466,13 +510,19 @@ export async function POST(request: Request) {
     const siteUrl = getSiteUrl(request);
 
     const checkoutLabel =
+      paymentMode === "deposit" ? `${service_name} Deposit` : service_name;
+
+    const descriptionParts = [
       paymentMode === "deposit"
-        ? `${service_name} Deposit`
-        : service_name;
+        ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}`
+        : "",
+      appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "",
+      tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : "",
+    ].filter(Boolean);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email,
+      customer_email: cleanCustomerEmail,
       payment_method_types: ["card"],
       line_items: [
         {
@@ -481,11 +531,9 @@ export async function POST(request: Request) {
             product_data: {
               name: checkoutLabel,
               description:
-                paymentMode === "deposit"
-                  ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}`
-                  : appliedDiscountCode
-                    ? `Discount applied: ${appliedDiscountCode}`
-                    : undefined,
+                descriptionParts.length > 0
+                  ? descriptionParts.join(" · ")
+                  : undefined,
             },
             unit_amount: Math.round(amountDueNow * 100),
           },
@@ -494,6 +542,7 @@ export async function POST(request: Request) {
       ],
       metadata: {
         bookingId: booking.id.toString(),
+        crmClientId: crmClientId ? String(crmClientId) : "",
         serviceId: serviceId ? serviceId.toString() : "",
         variationId: variationId ? variationId.toString() : "",
         bookingDate: booking_date,
@@ -502,8 +551,10 @@ export async function POST(request: Request) {
         originalPrice: numericPrice.toFixed(2),
         discountCode: appliedDiscountCode,
         discountAmount: discountAmount.toFixed(2),
+        depositBaseAmount: depositBaseAmount.toFixed(2),
         amountDueNow: amountDueNow.toFixed(2),
         remainingBalance: remainingBalance.toFixed(2),
+        tipAmount: tipAmount.toFixed(2),
         paymentMode,
       },
       success_url: `${siteUrl}/success?bookingId=${booking.id}`,

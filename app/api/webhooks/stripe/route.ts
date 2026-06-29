@@ -5,12 +5,9 @@ import { createClient } from "@supabase/supabase-js";
 import { sendBookingEmail } from "@/lib/sendBookingEmail";
 import { createCalendarEvent } from "@/lib/createCalendarEvent";
 
-const stripe = new Stripe(
-  process.env.STRIPE_SECRET_KEY as string
-);
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
 
-const endpointSecret =
-  process.env.STRIPE_WEBHOOK_SECRET as string;
+const endpointSecret = process.env.STRIPE_WEBHOOK_SECRET as string;
 
 const supabase = createClient(
   process.env.NEXT_PUBLIC_SUPABASE_URL as string,
@@ -99,6 +96,535 @@ async function incrementDiscountUsage(
   }
 }
 
+async function incrementInvoiceDiscountUsage(
+  invoiceId: number,
+  discountCode: string
+) {
+  if (!discountCode) {
+    return;
+  }
+
+  try {
+    const cleanCode = discountCode.trim().toUpperCase();
+
+    const { error } = await supabase.rpc(
+      "increment_invoice_discount_usage_once",
+      {
+        p_invoice_id: invoiceId,
+        p_discount_code: cleanCode,
+      }
+    );
+
+    if (error) {
+      console.error("INVOICE DISCOUNT USAGE RPC ERROR:", error);
+      return;
+    }
+
+    console.log(
+      "INVOICE DISCOUNT USAGE COUNTED:",
+      cleanCode,
+      "INVOICE:",
+      invoiceId
+    );
+  } catch (error) {
+    console.error("INVOICE DISCOUNT USAGE ERROR:", error);
+  }
+}
+
+async function handleBookingCheckoutCompleted(
+  session: Stripe.Checkout.Session
+) {
+  const bookingId = session.metadata?.bookingId;
+
+  if (!bookingId) {
+    return new Response("Missing booking ID", {
+      status: 400,
+    });
+  }
+
+  if (session.payment_status !== "paid") {
+    console.log(
+      "CHECKOUT COMPLETED BUT PAYMENT NOT PAID:",
+      bookingId,
+      session.payment_status
+    );
+
+    return new Response("Payment not paid yet", {
+      status: 200,
+    });
+  }
+
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("id", bookingId)
+    .single();
+
+  if (bookingError || !booking) {
+    console.error("BOOKING LOOKUP ERROR:", bookingError);
+
+    return new Response("Booking missing", {
+      status: 404,
+    });
+  }
+
+  const wasAlreadyConfirmed =
+    booking.payment_status === "paid" &&
+    booking.status === "confirmed";
+
+  const alreadyHasCalendarEvent = Boolean(
+    booking.meeting_link && booking.calendar_event_id
+  );
+
+  if (wasAlreadyConfirmed && alreadyHasCalendarEvent) {
+    console.log(
+      "DUPLICATE WEBHOOK IGNORED. BOOKING ALREADY CONFIRMED:",
+      bookingId
+    );
+
+    return new Response("Already processed", {
+      status: 200,
+    });
+  }
+
+  const bookingEndTime = getBookingEndTime({
+    bookingTime: booking.booking_time,
+    bookingEndTime: booking.booking_end_time,
+    metadataEndTime: session.metadata?.bookingEndTime,
+  });
+
+  const originalPrice = parseMoney(session.metadata?.originalPrice);
+
+  const discountCode =
+    session.metadata?.discountCode?.trim().toUpperCase() ??
+    booking.discount_code ??
+    "";
+
+  const discountAmount = parseMoney(session.metadata?.discountAmount);
+
+  const amountDueNow = parseMoney(session.metadata?.amountDueNow);
+
+  const remainingBalance = parseMoney(session.metadata?.remainingBalance);
+
+  const tipAmount = parseMoney(session.metadata?.tipAmount);
+
+  const paymentMode =
+    session.metadata?.paymentMode ||
+    booking.payment_mode ||
+    "full";
+
+  const balanceStatus =
+    paymentMode === "deposit" && remainingBalance > 0
+      ? booking.balance_status || "balance_due"
+      : "not_applicable";
+
+  let meetingLink: string | null = booking.meeting_link ?? null;
+
+  let calendarEventId: string | null =
+    booking.calendar_event_id ?? null;
+
+  if (!meetingLink || !calendarEventId) {
+    const calendarResult = await createCalendarEvent({
+      customerEmail: booking.customer_email,
+      bookingDate: booking.booking_date,
+      bookingTime: booking.booking_time,
+      bookingEndTime,
+      timezone: booking.timezone,
+    });
+
+    meetingLink = calendarResult.meetingLink ?? meetingLink;
+    calendarEventId = calendarResult.calendarEventId ?? calendarEventId;
+  } else {
+    console.log("CALENDAR EVENT ALREADY EXISTS FOR BOOKING:", bookingId);
+  }
+
+  const updatePayload: Record<string, unknown> = {
+    payment_status: "paid",
+    status: "confirmed",
+    booking_end_time: bookingEndTime,
+    meeting_link: meetingLink,
+    calendar_event_id: calendarEventId,
+    payment_mode: paymentMode,
+    balance_status: balanceStatus,
+  };
+
+  if (originalPrice > 0) {
+    updatePayload.original_price = originalPrice;
+  }
+
+  if (discountCode) {
+    updatePayload.discount_code = discountCode;
+  }
+
+  if (discountAmount > 0) {
+    updatePayload.discount_amount = discountAmount;
+  }
+
+  if (tipAmount > 0) {
+    updatePayload.tip_amount = tipAmount;
+  }
+
+  if (amountDueNow > 0) {
+    updatePayload.amount_due_now = amountDueNow;
+    updatePayload.price_paid = amountDueNow;
+  }
+
+  if (paymentMode === "deposit") {
+    updatePayload.deposit_amount = amountDueNow;
+    updatePayload.remaining_balance = remainingBalance;
+  } else {
+    updatePayload.deposit_amount = 0;
+    updatePayload.remaining_balance = 0;
+  }
+
+  const { error: updateError } = await supabase
+    .from("bookings")
+    .update(updatePayload)
+    .eq("id", bookingId);
+
+  if (updateError) {
+    console.error("BOOKING CONFIRMATION UPDATE ERROR:", updateError);
+
+    return new Response("Booking update failed", {
+      status: 500,
+    });
+  }
+
+  if (discountCode) {
+    await incrementDiscountUsage(Number(bookingId), discountCode);
+  }
+
+  if (!wasAlreadyConfirmed) {
+    try {
+      await sendBookingEmail({
+        customerEmail: booking.customer_email,
+        bookingDate: booking.booking_date,
+        bookingTime: booking.booking_time,
+        timezone: booking.timezone,
+        meetingLink,
+      });
+    } catch (emailError) {
+      console.error("BOOKING EMAIL ERROR:", emailError);
+    }
+  } else {
+    console.log("EMAIL SKIPPED. BOOKING ALREADY CONFIRMED:", bookingId);
+  }
+
+  console.log("BOOKING CONFIRMED:", bookingId);
+
+  return new Response("Success", {
+    status: 200,
+  });
+}
+
+async function handleAdminInvoiceCompleted(
+  session: Stripe.Checkout.Session
+) {
+  const invoiceId = session.metadata?.invoiceId;
+
+  if (!invoiceId) {
+    return new Response("Missing invoice ID", {
+      status: 400,
+    });
+  }
+
+  if (session.payment_status !== "paid") {
+    console.log(
+      "INVOICE CHECKOUT COMPLETED BUT PAYMENT NOT PAID:",
+      invoiceId,
+      session.payment_status
+    );
+
+    return new Response("Invoice payment not paid yet", {
+      status: 200,
+    });
+  }
+
+  const { data: invoice, error: invoiceError } = await supabase
+    .from("admin_invoices")
+    .select("*")
+    .eq("id", invoiceId)
+    .single();
+
+  if (invoiceError || !invoice) {
+    console.error("ADMIN INVOICE LOOKUP ERROR:", invoiceError);
+
+    return new Response("Invoice missing", {
+      status: 404,
+    });
+  }
+
+  if (invoice.status === "paid") {
+    console.log("DUPLICATE INVOICE WEBHOOK IGNORED:", invoiceId);
+
+    return new Response("Invoice already paid", {
+      status: 200,
+    });
+  }
+
+  const totalAmount =
+    parseMoney(session.metadata?.totalAmount) ||
+    Number(invoice.total_amount ?? 0);
+
+  const tipAmount =
+    parseMoney(session.metadata?.tipAmount) ||
+    Number(invoice.tip_amount ?? 0);
+
+  const discountCode =
+    session.metadata?.discountCode?.trim().toUpperCase() ||
+    invoice.discount_code ||
+    "";
+
+  const stripePaymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  const { error: updateError } = await supabase
+    .from("admin_invoices")
+    .update({
+      status: "paid",
+      amount_paid: totalAmount,
+      remaining_balance: 0,
+      tip_amount: tipAmount,
+      stripe_payment_intent_id: stripePaymentIntentId,
+      paid_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    })
+    .eq("id", invoiceId);
+
+  if (updateError) {
+    console.error("ADMIN INVOICE PAID UPDATE ERROR:", updateError);
+
+    return new Response("Invoice update failed", {
+      status: 500,
+    });
+  }
+
+  if (discountCode) {
+    await incrementInvoiceDiscountUsage(Number(invoiceId), discountCode);
+  }
+
+  console.log("ADMIN INVOICE PAID:", invoiceId);
+
+  return new Response("Success", {
+    status: 200,
+  });
+}
+
+async function handleBalancePaymentCompleted(
+  session: Stripe.Checkout.Session
+) {
+  const bookingId = session.metadata?.bookingId;
+
+  if (!bookingId) {
+    return new Response("Missing balance booking ID", {
+      status: 400,
+    });
+  }
+
+  if (session.payment_status !== "paid") {
+    console.log(
+      "BALANCE CHECKOUT COMPLETED BUT PAYMENT NOT PAID:",
+      bookingId,
+      session.payment_status
+    );
+
+    return new Response("Balance payment not paid yet", {
+      status: 200,
+    });
+  }
+
+  const amountPaid =
+    parseMoney(session.metadata?.balanceAmount) ||
+    parseMoney(session.metadata?.totalAmount);
+
+  const stripePaymentIntentId =
+    typeof session.payment_intent === "string"
+      ? session.payment_intent
+      : session.payment_intent?.id ?? null;
+
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("id", bookingId)
+    .single();
+
+  if (bookingError || !booking) {
+    console.error("BALANCE BOOKING LOOKUP ERROR:", bookingError);
+
+    return new Response("Booking missing", {
+      status: 404,
+    });
+  }
+
+  if (booking.balance_status === "balance_paid") {
+    console.log("DUPLICATE BALANCE WEBHOOK IGNORED:", bookingId);
+
+    return new Response("Balance already paid", {
+      status: 200,
+    });
+  }
+
+  const currentPaid = Number(booking.price_paid ?? 0);
+
+  const { error: updateError } = await supabase
+    .from("bookings")
+    .update({
+      price_paid: currentPaid + amountPaid,
+      remaining_balance: 0,
+      balance_status: "balance_paid",
+      balance_paid_at: new Date().toISOString(),
+      balance_stripe_session_id: session.id,
+      payment_status: "paid",
+      stripe_payment_intent_id: stripePaymentIntentId,
+    })
+    .eq("id", bookingId);
+
+  if (updateError) {
+    console.error("BALANCE PAYMENT UPDATE ERROR:", updateError);
+
+    return new Response("Balance update failed", {
+      status: 500,
+    });
+  }
+
+  console.log("BOOKING BALANCE PAID:", bookingId);
+
+  return new Response("Success", {
+    status: 200,
+  });
+}
+
+async function handleCheckoutSessionExpired(
+  session: Stripe.Checkout.Session
+) {
+  const paymentType = session.metadata?.paymentType;
+
+  if (paymentType === "admin_invoice") {
+    const invoiceId = session.metadata?.invoiceId;
+
+    if (invoiceId) {
+      await supabase
+        .from("admin_invoices")
+        .update({
+          status: "expired",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", invoiceId)
+        .neq("status", "paid");
+    }
+
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  if (paymentType === "balance_payment") {
+    const bookingId = session.metadata?.bookingId;
+
+    if (bookingId) {
+      await supabase
+        .from("bookings")
+        .update({
+          balance_status: "balance_due",
+          updated_at: new Date().toISOString(),
+        })
+        .eq("id", bookingId)
+        .neq("balance_status", "balance_paid");
+    }
+
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  const bookingId = session.metadata?.bookingId;
+
+  if (!bookingId) {
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  const { data: booking, error: bookingError } = await supabase
+    .from("bookings")
+    .select("*")
+    .eq("id", bookingId)
+    .single();
+
+  if (bookingError || !booking) {
+    console.error("EXPIRED BOOKING LOOKUP ERROR:", bookingError);
+
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  if (
+    booking.payment_status === "paid" ||
+    booking.status === "confirmed"
+  ) {
+    console.log("EXPIRED SESSION IGNORED. BOOKING ALREADY PAID:", bookingId);
+
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  if (booking.status === "cancelled") {
+    console.log(
+      "EXPIRED SESSION IGNORED. BOOKING ALREADY CANCELLED:",
+      bookingId
+    );
+
+    return new Response("Success", {
+      status: 200,
+    });
+  }
+
+  const bookingEndTime = getBookingEndTime({
+    bookingTime: booking.booking_time,
+    bookingEndTime: booking.booking_end_time,
+    metadataEndTime: session.metadata?.bookingEndTime,
+  });
+
+  const { data: existingAvailability } = await supabase
+    .from("availability")
+    .select("id")
+    .eq("available_date", booking.booking_date)
+    .eq("start_time", booking.booking_time)
+    .eq("end_time", bookingEndTime)
+    .maybeSingle();
+
+  if (!existingAvailability) {
+    await supabase.from("availability").insert({
+      available_date: booking.booking_date,
+      available_time: booking.booking_time,
+      start_time: booking.booking_time,
+      end_time: bookingEndTime,
+      timezone: booking.timezone,
+    });
+  }
+
+  const { error: cancelError } = await supabase
+    .from("bookings")
+    .update({
+      payment_status: "failed",
+      status: "cancelled",
+      balance_status: "cancelled",
+    })
+    .eq("id", bookingId);
+
+  if (cancelError) {
+    console.error("EXPIRED BOOKING CANCEL ERROR:", cancelError);
+  }
+
+  return new Response("Success", {
+    status: 200,
+  });
+}
+
 export async function POST(request: Request) {
   const body = await request.text();
 
@@ -128,285 +654,23 @@ export async function POST(request: Request) {
 
   if (event.type === "checkout.session.completed") {
     const session = event.data.object as Stripe.Checkout.Session;
+    const paymentType = session.metadata?.paymentType;
 
-    const bookingId = session.metadata?.bookingId;
-
-    if (!bookingId) {
-      return new Response("Missing booking ID", {
-        status: 400,
-      });
+    if (paymentType === "admin_invoice") {
+      return handleAdminInvoiceCompleted(session);
     }
 
-    if (session.payment_status !== "paid") {
-      console.log(
-        "CHECKOUT COMPLETED BUT PAYMENT NOT PAID:",
-        bookingId,
-        session.payment_status
-      );
-
-      return new Response("Payment not paid yet", {
-        status: 200,
-      });
+    if (paymentType === "balance_payment") {
+      return handleBalancePaymentCompleted(session);
     }
 
-    const { data: booking, error: bookingError } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .single();
-
-    if (bookingError || !booking) {
-      console.error("BOOKING LOOKUP ERROR:", bookingError);
-
-      return new Response("Booking missing", {
-        status: 404,
-      });
-    }
-
-    const wasAlreadyConfirmed =
-      booking.payment_status === "paid" &&
-      booking.status === "confirmed";
-
-    const alreadyHasCalendarEvent = Boolean(
-      booking.meeting_link && booking.calendar_event_id
-    );
-
-    if (wasAlreadyConfirmed && alreadyHasCalendarEvent) {
-      console.log(
-        "DUPLICATE WEBHOOK IGNORED. BOOKING ALREADY CONFIRMED:",
-        bookingId
-      );
-
-      return new Response("Already processed", {
-        status: 200,
-      });
-    }
-
-    const bookingEndTime = getBookingEndTime({
-      bookingTime: booking.booking_time,
-      bookingEndTime: booking.booking_end_time,
-      metadataEndTime: session.metadata?.bookingEndTime,
-    });
-
-    const originalPrice = parseMoney(
-      session.metadata?.originalPrice
-    );
-
-    const discountCode =
-      session.metadata?.discountCode?.trim().toUpperCase() ??
-      booking.discount_code ??
-      "";
-
-    const discountAmount = parseMoney(
-      session.metadata?.discountAmount
-    );
-
-    const amountDueNow = parseMoney(
-      session.metadata?.amountDueNow
-    );
-
-    const remainingBalance = parseMoney(
-      session.metadata?.remainingBalance
-    );
-
-    const paymentMode =
-      session.metadata?.paymentMode ||
-      booking.payment_mode ||
-      "full";
-
-    const balanceStatus =
-      paymentMode === "deposit" && remainingBalance > 0
-        ? booking.balance_status || "balance_due"
-        : "not_applicable";
-
-    let meetingLink: string | null =
-      booking.meeting_link ?? null;
-
-    let calendarEventId: string | null =
-      booking.calendar_event_id ?? null;
-
-    if (!meetingLink || !calendarEventId) {
-      const calendarResult = await createCalendarEvent({
-        customerEmail: booking.customer_email,
-        bookingDate: booking.booking_date,
-        bookingTime: booking.booking_time,
-        bookingEndTime,
-        timezone: booking.timezone,
-      });
-
-      meetingLink = calendarResult.meetingLink ?? meetingLink;
-      calendarEventId =
-        calendarResult.calendarEventId ?? calendarEventId;
-    } else {
-      console.log(
-        "CALENDAR EVENT ALREADY EXISTS FOR BOOKING:",
-        bookingId
-      );
-    }
-
-    const updatePayload: Record<string, unknown> = {
-      payment_status: "paid",
-      status: "confirmed",
-      booking_end_time: bookingEndTime,
-      meeting_link: meetingLink,
-      calendar_event_id: calendarEventId,
-      payment_mode: paymentMode,
-      balance_status: balanceStatus,
-    };
-
-    if (originalPrice > 0) {
-      updatePayload.original_price = originalPrice;
-    }
-
-    if (discountCode) {
-      updatePayload.discount_code = discountCode;
-    }
-
-    if (discountAmount > 0) {
-      updatePayload.discount_amount = discountAmount;
-    }
-
-    if (amountDueNow > 0) {
-      updatePayload.amount_due_now = amountDueNow;
-      updatePayload.price_paid = amountDueNow;
-    }
-
-    if (paymentMode === "deposit") {
-      updatePayload.deposit_amount = amountDueNow;
-      updatePayload.remaining_balance = remainingBalance;
-    } else {
-      updatePayload.deposit_amount = 0;
-      updatePayload.remaining_balance = 0;
-    }
-
-    const { error: updateError } = await supabase
-      .from("bookings")
-      .update(updatePayload)
-      .eq("id", bookingId);
-
-    if (updateError) {
-      console.error(
-        "BOOKING CONFIRMATION UPDATE ERROR:",
-        updateError
-      );
-
-      return new Response("Booking update failed", {
-        status: 500,
-      });
-    }
-
-    if (discountCode) {
-      await incrementDiscountUsage(Number(bookingId), discountCode);
-    }
-
-    if (!wasAlreadyConfirmed) {
-      try {
-        await sendBookingEmail({
-          customerEmail: booking.customer_email,
-          bookingDate: booking.booking_date,
-          bookingTime: booking.booking_time,
-          timezone: booking.timezone,
-          meetingLink,
-        });
-      } catch (emailError) {
-        console.error("BOOKING EMAIL ERROR:", emailError);
-      }
-    } else {
-      console.log(
-        "EMAIL SKIPPED. BOOKING ALREADY CONFIRMED:",
-        bookingId
-      );
-    }
-
-    console.log("BOOKING CONFIRMED:", bookingId);
+    return handleBookingCheckoutCompleted(session);
   }
 
   if (event.type === "checkout.session.expired") {
     const session = event.data.object as Stripe.Checkout.Session;
 
-    const bookingId = session.metadata?.bookingId;
-
-    if (!bookingId) {
-      return new Response("Success", {
-        status: 200,
-      });
-    }
-
-    const { data: booking, error: bookingError } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("id", bookingId)
-      .single();
-
-    if (bookingError || !booking) {
-      console.error("EXPIRED BOOKING LOOKUP ERROR:", bookingError);
-
-      return new Response("Success", {
-        status: 200,
-      });
-    }
-
-    if (
-      booking.payment_status === "paid" ||
-      booking.status === "confirmed"
-    ) {
-      console.log(
-        "EXPIRED SESSION IGNORED. BOOKING ALREADY PAID:",
-        bookingId
-      );
-
-      return new Response("Success", {
-        status: 200,
-      });
-    }
-
-    if (booking.status === "cancelled") {
-      console.log(
-        "EXPIRED SESSION IGNORED. BOOKING ALREADY CANCELLED:",
-        bookingId
-      );
-
-      return new Response("Success", {
-        status: 200,
-      });
-    }
-
-    const bookingEndTime = getBookingEndTime({
-      bookingTime: booking.booking_time,
-      bookingEndTime: booking.booking_end_time,
-      metadataEndTime: session.metadata?.bookingEndTime,
-    });
-
-    const { data: existingAvailability } = await supabase
-      .from("availability")
-      .select("id")
-      .eq("available_date", booking.booking_date)
-      .eq("start_time", booking.booking_time)
-      .eq("end_time", bookingEndTime)
-      .maybeSingle();
-
-    if (!existingAvailability) {
-      await supabase.from("availability").insert({
-        available_date: booking.booking_date,
-        available_time: booking.booking_time,
-        start_time: booking.booking_time,
-        end_time: bookingEndTime,
-        timezone: booking.timezone,
-      });
-    }
-
-    const { error: cancelError } = await supabase
-      .from("bookings")
-      .update({
-        payment_status: "failed",
-        status: "cancelled",
-        balance_status: "cancelled",
-      })
-      .eq("id", bookingId);
-
-    if (cancelError) {
-      console.error("EXPIRED BOOKING CANCEL ERROR:", cancelError);
-    }
+    return handleCheckoutSessionExpired(session);
   }
 
   return new Response("Success", {
