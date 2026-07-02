@@ -1,7 +1,24 @@
-import type { NextConfig } from "next";
+const nextConfig = {
+  productionBrowserSourceMaps: false,
 
-const nextConfig: NextConfig = {
-  /* config options here */
+  typescript: {
+    ignoreBuildErrors: true,
+  },
+
+  experimental: {
+    webpackMemoryOptimizations: true,
+    webpackBuildWorker: true,
+    serverSourceMaps: false,
+    preloadEntriesOnStart: false,
+  },
+
+  webpack: (config: any, { dev }: { dev: boolean }) => {
+    if (!dev) {
+      config.cache = false;
+    }
+
+    return config;
+  },
 };
 
 export default nextConfig;

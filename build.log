@@ -4,7 +4,134 @@
 
 ▲ Next.js 16.2.6 (webpack)
 - Environments: .env.local
+- Experiments (use with caution):
+  ⨯ preloadEntriesOnStart
+  ⨯ serverSourceMaps
+  ✓ webpackBuildWorker
+  ✓ webpackMemoryOptimizations
 
 ⚠ The "middleware" file convention is deprecated. Please use "proxy" instead. Learn more: https://nextjs.org/docs/messages/middleware-to-proxy
   Creating an optimized production build ...
-Next.js build worker exited with code: null and signal: SIGTERM
+✓ Compiled successfully in 66s
+  Skipping validation of types
+  Finished TypeScript config validation in 13ms ...
+  Collecting page data using 1 worker ...
+  Generating static pages using 1 worker (0/101) ...
+  Generating static pages using 1 worker (25/101) 
+  Generating static pages using 1 worker (50/101) 
+  Generating static pages using 1 worker (75/101) 
+✓ Generating static pages using 1 worker (101/101) in 7.0s
+  Finalizing page optimization ...
+  Collecting build traces ...
+
+Route (app)
+┌ ○ /
+├ ○ /_not-found
+├ ƒ /api/bookings/cancel
+├ ƒ /api/bookings/create-balance-checkout
+├ ƒ /api/bookings/reschedule
+├ ƒ /api/checkout
+├ ƒ /api/client/bulk-generate-project-portal-tokens
+├ ƒ /api/client/log-project-portal-access
+├ ƒ /api/client/log-project-portal-follow-up
+├ ƒ /api/client/project-portal-token
+├ ƒ /api/client/regenerate-project-portal-token
+├ ƒ /api/contracts/create
+├ ƒ /api/contracts/sign
+├ ƒ /api/cron/admin-security-snapshot
+├ ƒ /api/cron/cleanup-admin-login-attempts
+├ ƒ /api/cron/cleanup-admin-security-snapshots
+├ ƒ /api/cron/cleanup-cron-run-logs
+├ ƒ /api/cron/cleanup-system-health-snapshots
+├ ƒ /api/cron/project-portal-follow-ups
+├ ƒ /api/cron/reminders
+├ ƒ /api/cron/system-health-snapshot
+├ ƒ /api/dashboard/admin-ip-blocklist
+├ ƒ /api/dashboard/admin-ip-blocklist/events
+├ ƒ /api/dashboard/admin-ip-blocklist/export
+├ ƒ /api/dashboard/admin-login-attempts
+├ ƒ /api/dashboard/admin-login-attempts/analytics
+├ ƒ /api/dashboard/admin-login-attempts/analytics/export
+├ ƒ /api/dashboard/admin-login-attempts/export
+├ ƒ /api/dashboard/admin-security-snapshots
+├ ƒ /api/dashboard/admin-security-snapshots/analytics
+├ ƒ /api/dashboard/admin-security-snapshots/analytics/export
+├ ƒ /api/dashboard/admin-security-snapshots/delete
+├ ƒ /api/dashboard/admin-security-snapshots/export
+├ ƒ /api/dashboard/auth/login
+├ ƒ /api/dashboard/auth/logout
+├ ƒ /api/dashboard/auth/status
+├ ƒ /api/dashboard/auth/verify
+├ ƒ /api/dashboard/cron-run-logs
+├ ƒ /api/dashboard/cron-run-logs/analytics
+├ ƒ /api/dashboard/cron-run-logs/analytics/export
+├ ƒ /api/dashboard/cron-run-logs/clear
+├ ƒ /api/dashboard/cron-run-logs/delete
+├ ƒ /api/dashboard/cron-run-logs/export
+├ ƒ /api/dashboard/project-portal-follow-ups
+├ ƒ /api/dashboard/reminders-summary
+├ ƒ /api/dashboard/run-admin-login-attempt-cleanup
+├ ƒ /api/dashboard/run-admin-security-snapshot
+├ ƒ /api/dashboard/run-admin-security-snapshot-cleanup
+├ ƒ /api/dashboard/run-cron-log-cleanup
+├ ƒ /api/dashboard/run-project-portal-follow-ups
+├ ƒ /api/dashboard/run-reminders-cron
+├ ƒ /api/dashboard/run-system-health-snapshot
+├ ƒ /api/dashboard/run-system-health-snapshot-cleanup
+├ ƒ /api/dashboard/system-health-snapshots
+├ ƒ /api/dashboard/system-health-snapshots/analytics
+├ ƒ /api/dashboard/system-health-snapshots/analytics/export
+├ ƒ /api/dashboard/system-health-snapshots/clear
+├ ƒ /api/dashboard/system-health-snapshots/delete
+├ ƒ /api/dashboard/system-health-snapshots/export
+├ ƒ /api/discounts/validate
+├ ƒ /api/google/auth
+├ ƒ /api/google/callback
+├ ƒ /api/invoices/create-checkout
+├ ƒ /api/projects/create-from-booking
+├ ƒ /api/projects/create-from-contract
+├ ƒ /api/projects/create-from-invoice
+├ ƒ /api/webhooks/stripe
+├ ○ /cancel
+├ ○ /client
+├ ○ /client/projects
+├ ƒ /contracts/[token]
+├ ○ /dashboard
+├ ƒ /dashboard-login
+├ ○ /dashboard/analytics
+├ ○ /dashboard/availability
+├ ○ /dashboard/bookings
+├ ○ /dashboard/clients
+├ ○ /dashboard/contact
+├ ○ /dashboard/contracts
+├ ○ /dashboard/cta
+├ ○ /dashboard/discounts
+├ ○ /dashboard/faqs
+├ ○ /dashboard/files
+├ ○ /dashboard/footer
+├ ○ /dashboard/gallery
+├ ○ /dashboard/invoices
+├ ○ /dashboard/launch
+├ ○ /dashboard/messages
+├ ○ /dashboard/navigation
+├ ○ /dashboard/notifications
+├ ○ /dashboard/process
+├ ○ /dashboard/projects
+├ ○ /dashboard/seo
+├ ○ /dashboard/services
+├ ○ /dashboard/settings
+├ ○ /dashboard/testimonials
+├ ○ /dashboard/variations
+├ ○ /demo
+├ ○ /login
+├ ○ /roadmap
+├ ○ /signup
+├ ○ /success
+└ ○ /template
+
+
+ƒ Proxy (Middleware)
+
+○  (Static)   prerendered as static content
+ƒ  (Dynamic)  server-rendered on demand
+
