@@ -17,10 +17,10 @@ function getStringId(value: unknown) {
   return String(value ?? "").trim();
 }
 
-function getNumericIdOrNull(value: string) {
-  const numericValue = Number(value);
+function getNumberOrNull(value: unknown) {
+  const numberValue = Number(value);
 
-  return Number.isFinite(numericValue) ? numericValue : null;
+  return Number.isFinite(numberValue) ? numberValue : null;
 }
 
 function getClientName(client: Record<string, unknown>) {
@@ -30,6 +30,8 @@ function getClientName(client: Record<string, unknown>) {
       client.client_name ||
       client.customer_name ||
       client.email ||
+      client.customer_email ||
+      client.client_email ||
       `Client #${client.id}`
   );
 }
@@ -76,39 +78,67 @@ async function findRecordById(table: string, id: string) {
   return data;
 }
 
+async function findAnyInvoiceId() {
+  const { data, error } = await supabaseAdmin
+    .from("admin_invoices")
+    .select("id")
+    .order("created_at", {
+      ascending: false,
+    })
+    .limit(1)
+    .maybeSingle();
+
+  if (error || !data?.id) {
+    return null;
+  }
+
+  return data.id;
+}
+
 async function insertContractWithFallback({
   basePayload,
   clientId,
   templateId,
+  fallbackInvoiceId,
 }: {
   basePayload: Record<string, unknown>;
   clientId: string;
   templateId: string;
+  fallbackInvoiceId: unknown;
 }) {
-  const insertAttempts = [
+  const numericClientId = getNumberOrNull(clientId);
+  const numericTemplateId = getNumberOrNull(templateId);
+
+  const attempts: Record<string, unknown>[] = [
     {
       ...basePayload,
       client_id: clientId,
       template_id: templateId,
+      invoice_id: fallbackInvoiceId,
     },
     {
       ...basePayload,
-      client_id: getNumericIdOrNull(clientId),
-      template_id: getNumericIdOrNull(templateId),
+      client_id: numericClientId,
+      template_id: numericTemplateId,
+      invoice_id: fallbackInvoiceId,
     },
     {
       ...basePayload,
-      client_id: null,
-      template_id: getNumericIdOrNull(templateId),
+      client_id: numericClientId,
+      template_id: numericTemplateId,
+    },
+    {
+      ...basePayload,
+      invoice_id: fallbackInvoiceId,
     },
     {
       ...basePayload,
     },
   ];
 
-  let lastError: unknown = null;
+  const errors: string[] = [];
 
-  for (const payload of insertAttempts) {
+  for (const payload of attempts) {
     const { data, error } = await supabaseAdmin
       .from("client_contracts")
       .insert(payload)
@@ -119,10 +149,10 @@ async function insertContractWithFallback({
       return data;
     }
 
-    lastError = error;
+    errors.push(error.message);
   }
 
-  throw lastError;
+  throw new Error(errors.join(" | "));
 }
 
 export async function POST(request: Request) {
@@ -161,9 +191,10 @@ export async function POST(request: Request) {
       );
     }
 
-    const [client, template] = await Promise.all([
+    const [client, template, fallbackInvoiceId] = await Promise.all([
       findRecordById("crm_clients", clientId),
       findRecordById("contract_templates", templateId),
+      findAnyInvoiceId(),
     ]);
 
     if (!client) {
@@ -191,12 +222,14 @@ export async function POST(request: Request) {
     const signingToken = crypto.randomBytes(32).toString("hex");
     const siteUrl = getSiteUrl(request);
     const signingUrl = `${siteUrl}/contracts/${signingToken}`;
+    const defaultTitle =
+      contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`;
+
+    const now = new Date().toISOString();
 
     const basePayload = {
-      contract_title:
-        contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`,
-      title:
-        contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`,
+      contract_title: defaultTitle,
+      title: defaultTitle,
       template_name: getTemplateName(template),
       client_name: getClientName(client),
       client_email: getClientEmail(client),
@@ -207,15 +240,16 @@ export async function POST(request: Request) {
       status: "sent",
       signing_token: signingToken,
       signing_url: signingUrl,
-      sent_at: new Date().toISOString(),
-      created_at: new Date().toISOString(),
-      updated_at: new Date().toISOString(),
+      sent_at: now,
+      created_at: now,
+      updated_at: now,
     };
 
     const contract = await insertContractWithFallback({
       basePayload,
       clientId,
       templateId,
+      fallbackInvoiceId,
     });
 
     return NextResponse.json({
@@ -229,7 +263,9 @@ export async function POST(request: Request) {
     return NextResponse.json(
       {
         error:
-          error instanceof Error ? error.message : "Contract could not be created.",
+          error instanceof Error
+            ? error.message
+            : "Contract could not be created.",
       },
       {
         status: 500,
