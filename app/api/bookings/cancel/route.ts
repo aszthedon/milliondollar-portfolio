@@ -1,40 +1,71 @@
-import { NextResponse }
-from "next/server";
+import { NextResponse } from "next/server";
 
-import {
-  createClient,
-} from "@supabase/supabase-js";
+import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { supabaseAdmin } from "@/lib/supabase-admin";
 
-import { deleteCalendarEvent }
-from "@/lib/deleteCalendarEvent";
+function getBookingId(body: Record<string, unknown>) {
+  return Number(body.booking_id ?? body.bookingId ?? body.id);
+}
 
-import { sendCancellationEmail }
-from "@/lib/sendCancellationEmail";
+async function updateBookingWithFallback({
+  bookingId,
+  reason,
+}: {
+  bookingId: number;
+  reason: string;
+}) {
+  const richUpdate = {
+    status: "cancelled",
+    booking_status: "cancelled",
+    cancellation_reason: reason,
+    cancelled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
 
-const supabase =
-  createClient(
-    process.env
-      .NEXT_PUBLIC_SUPABASE_URL!,
-    process.env
-      .SUPABASE_SERVICE_ROLE_KEY!
-  );
+  const { data, error } = await supabaseAdmin
+    .from("bookings")
+    .update(richUpdate)
+    .eq("id", bookingId)
+    .select("*")
+    .maybeSingle();
 
-export async function POST(
-  request: Request
-) {
+  if (!error) {
+    return data;
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+    .from("bookings")
+    .update({
+      status: "cancelled",
+    })
+    .eq("id", bookingId)
+    .select("*")
+    .maybeSingle();
+
+  if (fallbackError) {
+    throw fallbackError;
+  }
+
+  return fallbackData;
+}
+
+export async function POST(request: Request) {
+  const unauthorizedResponse = requireAdminRequest(request);
+
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
+  }
+
   try {
-    const {
-      bookingId,
-    } =
-      await request.json();
+    const body = await request.json().catch(() => ({}));
 
-    if (
-      !bookingId
-    ) {
+    const bookingId = getBookingId(body);
+    const reason = String(body.reason ?? "Cancelled from dashboard.").trim();
+
+    if (!Number.isFinite(bookingId)) {
       return NextResponse.json(
         {
-          error:
-            "Missing booking ID",
+          error: "A valid booking ID is required.",
         },
         {
           status: 400,
@@ -42,23 +73,20 @@ export async function POST(
       );
     }
 
-    const booking =
-      await supabase
-        .from("bookings")
-        .select("*")
-        .eq(
-          "id",
-          bookingId
-        )
-        .single();
+    const { data: existingBooking, error: existingError } = await supabaseAdmin
+      .from("bookings")
+      .select("*")
+      .eq("id", bookingId)
+      .maybeSingle();
 
-    if (
-      !booking.data
-    ) {
+    if (existingError) {
+      throw existingError;
+    }
+
+    if (!existingBooking) {
       return NextResponse.json(
         {
-          error:
-            "Booking not found",
+          error: "Booking was not found.",
         },
         {
           status: 404,
@@ -66,63 +94,22 @@ export async function POST(
       );
     }
 
-    if (
-      booking.data
-        .calendar_event_id
-    ) {
-      await deleteCalendarEvent(
-        booking.data
-          .calendar_event_id
-      );
-    }
-
-    await supabase
-      .from("bookings")
-      .update({
-        status:
-          "cancelled",
-      })
-      .eq(
-        "id",
-        bookingId
-      );
-
-    await sendCancellationEmail({
-      customerEmail:
-        booking.data
-          .customer_email,
-
-      bookingDate:
-        booking.data
-          .booking_date,
-
-      bookingTime:
-        booking.data
-          .booking_time,
-
-      timezone:
-        booking.data
-          .timezone,
+    const booking = await updateBookingWithFallback({
+      bookingId,
+      reason,
     });
-
-    console.log(
-      "BOOKING CANCELLED:",
-      bookingId
-    );
 
     return NextResponse.json({
-      success: true,
+      booking,
+      message: "Booking cancelled.",
     });
   } catch (error) {
-    console.error(
-      "CANCEL BOOKING ERROR:",
-      error
-    );
+    console.error("CANCEL BOOKING ERROR:", error);
 
     return NextResponse.json(
       {
         error:
-          "Cancellation failed",
+          error instanceof Error ? error.message : "Booking could not be cancelled.",
       },
       {
         status: 500,

@@ -1,175 +1,121 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
+import { requireAdminRequest } from "@/lib/security/adminGuard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY as string);
+function getStripe() {
+  const stripeSecretKey = process.env.STRIPE_SECRET_KEY;
+
+  if (!stripeSecretKey) {
+    throw new Error("STRIPE_SECRET_KEY is not configured.");
+  }
+
+  return new Stripe(stripeSecretKey);
+}
 
 function getSiteUrl(request: Request) {
+  const fallbackUrl = new URL(request.url);
+
   return (
-    process.env.NEXT_PUBLIC_SITE_URL ??
-    request.headers.get("origin") ??
-    "http://localhost:3000"
+    process.env.NEXT_PUBLIC_SITE_URL ||
+    `${fallbackUrl.protocol}//${fallbackUrl.host}`
   ).replace(/\/$/, "");
 }
 
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
+function getInvoiceId(body: Record<string, unknown>) {
+  return Number(body.invoice_id ?? body.invoiceId ?? body.id);
 }
 
-interface IncomingLineItem {
-  item_name?: string;
-  description?: string;
-  quantity?: number | string;
-  unit_amount?: number | string;
-}
+function getInvoiceAmount(invoice: Record<string, unknown>) {
+  const possibleValues = [
+    invoice.balance_due,
+    invoice.remaining_balance,
+    invoice.total_amount,
+    invoice.amount,
+    invoice.price,
+  ];
 
-async function upsertCrmClient({
-  clientEmail,
-  clientName,
-}: {
-  clientEmail: string;
-  clientName: string;
-}) {
-  const cleanEmail = clientEmail.trim().toLowerCase();
+  for (const value of possibleValues) {
+    const numberValue = Number(value);
 
-  if (!cleanEmail) {
-    return null;
+    if (Number.isFinite(numberValue) && numberValue > 0) {
+      return numberValue;
+    }
   }
 
-  const payload: Record<string, unknown> = {
-    email: cleanEmail,
-    source: "invoice",
-    last_contacted_at: new Date().toISOString(),
+  return 0;
+}
+
+function getInvoiceTitle(invoice: Record<string, unknown>) {
+  return String(
+    invoice.title ||
+      invoice.invoice_title ||
+      invoice.invoice_number ||
+      `Invoice #${invoice.id}`
+  );
+}
+
+function getCustomerEmail(invoice: Record<string, unknown>) {
+  const email = String(
+    invoice.customer_email ||
+      invoice.client_email ||
+      invoice.email ||
+      ""
+  ).trim();
+
+  return email || undefined;
+}
+
+async function updateInvoiceAfterCheckout({
+  invoiceId,
+  sessionId,
+  url,
+}: {
+  invoiceId: number;
+  sessionId: string;
+  url: string | null;
+}) {
+  const richUpdate = {
+    stripe_checkout_session_id: sessionId,
+    checkout_url: url,
+    invoice_status: "sent",
+    payment_status: "pending",
+    updated_at: new Date().toISOString(),
   };
 
-  if (clientName.trim()) {
-    payload.full_name = clientName.trim();
+  const { error } = await supabaseAdmin
+    .from("admin_invoices")
+    .update(richUpdate)
+    .eq("id", invoiceId);
+
+  if (!error) {
+    return;
   }
 
-  const { data, error } = await supabaseAdmin
-    .from("crm_clients")
-    .upsert(payload, {
-      onConflict: "email",
+  await supabaseAdmin
+    .from("admin_invoices")
+    .update({
+      stripe_session_id: sessionId,
     })
-    .select("id")
-    .single();
-
-  if (error) {
-    console.error("CRM CLIENT UPSERT ERROR:", error);
-    return null;
-  }
-
-  return data?.id ?? null;
+    .eq("id", invoiceId);
 }
 
 export async function POST(request: Request) {
+  const unauthorizedResponse = requireAdminRequest(request);
+
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
+  }
+
   try {
-    const body = await request.json();
+    const body = await request.json().catch(() => ({}));
+    const invoiceId = getInvoiceId(body);
 
-    const clientName =
-      typeof body.client_name === "string" ? body.client_name.trim() : "";
-
-    const clientEmail =
-      typeof body.client_email === "string"
-        ? body.client_email.trim().toLowerCase()
-        : "";
-
-    const title = typeof body.title === "string" ? body.title.trim() : "";
-
-    const description =
-      typeof body.description === "string" ? body.description.trim() : "";
-
-    const notes = typeof body.notes === "string" ? body.notes.trim() : "";
-
-    const dueDate =
-      typeof body.due_date === "string" && body.due_date
-        ? body.due_date
-        : null;
-
-    const discountCode =
-      typeof body.discount_code === "string"
-        ? body.discount_code.trim().toUpperCase()
-        : "";
-
-    const discountAmount = Math.max(Number(body.discount_amount ?? 0), 0);
-
-    const tipAmount = Math.max(Number(body.tip_amount ?? 0), 0);
-
-    const allowTips = Boolean(body.allow_tips ?? true);
-
-    const incomingLineItems = Array.isArray(body.line_items)
-      ? (body.line_items as IncomingLineItem[])
-      : [];
-
-    if (!clientEmail || !title) {
+    if (!Number.isFinite(invoiceId)) {
       return NextResponse.json(
         {
-          error: "Client email and invoice title are required.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const normalizedLineItems = incomingLineItems
-      .map((item, index) => {
-        const itemName =
-          typeof item.item_name === "string" ? item.item_name.trim() : "";
-
-        const itemDescription =
-          typeof item.description === "string" ? item.description.trim() : "";
-
-        const quantity = Math.max(Number(item.quantity ?? 1), 1);
-        const unitAmount = Math.max(Number(item.unit_amount ?? 0), 0);
-        const lineTotal = roundMoney(quantity * unitAmount);
-
-        return {
-          item_name: itemName,
-          description: itemDescription,
-          quantity,
-          unit_amount: roundMoney(unitAmount),
-          line_total: lineTotal,
-          sort_order: index,
-        };
-      })
-      .filter((item) => item.item_name && item.line_total > 0);
-
-    if (normalizedLineItems.length === 0) {
-      return NextResponse.json(
-        {
-          error: "Add at least one invoice line item.",
-        },
-        {
-          status: 400,
-        }
-      );
-    }
-
-    const crmClientId = await upsertCrmClient({
-      clientEmail,
-      clientName,
-    });
-
-    const subtotalAmount = roundMoney(
-      normalizedLineItems.reduce((total, item) => total + item.line_total, 0)
-    );
-
-    const safeDiscountAmount = roundMoney(
-      Math.min(discountAmount, subtotalAmount)
-    );
-
-    const safeTipAmount = roundMoney(tipAmount);
-
-    const totalAmount = roundMoney(
-      subtotalAmount - safeDiscountAmount + safeTipAmount
-    );
-
-    if (totalAmount <= 0) {
-      return NextResponse.json(
-        {
-          error: "Invoice total must be greater than $0.",
+          error: "A valid invoice ID is required.",
         },
         {
           status: 400,
@@ -179,126 +125,92 @@ export async function POST(request: Request) {
 
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("admin_invoices")
-      .insert({
-        crm_client_id: crmClientId,
-        client_name: clientName || null,
-        client_email: clientEmail,
-        title,
-        description: description || null,
-        subtotal_amount: subtotalAmount,
-        discount_code: discountCode || null,
-        discount_amount: safeDiscountAmount,
-        tip_amount: safeTipAmount,
-        total_amount: totalAmount,
-        amount_paid: 0,
-        remaining_balance: totalAmount,
-        allow_tips: allowTips,
-        status: "sent",
-        due_date: dueDate,
-        notes: notes || null,
-      })
-      .select()
-      .single();
+      .select("*")
+      .eq("id", invoiceId)
+      .maybeSingle();
 
-    if (invoiceError || !invoice) {
-      console.error("ADMIN INVOICE CREATE ERROR:", invoiceError);
+    if (invoiceError) {
+      throw invoiceError;
+    }
 
+    if (!invoice) {
       return NextResponse.json(
         {
-          error: "Invoice could not be created.",
+          error: "Invoice was not found.",
         },
         {
-          status: 500,
+          status: 404,
         }
       );
     }
 
-    const lineItemsToInsert = normalizedLineItems.map((item) => ({
-      invoice_id: invoice.id,
-      ...item,
-    }));
+    const amountInDollars = getInvoiceAmount(invoice);
 
-    const { error: lineItemsError } = await supabaseAdmin
-      .from("admin_invoice_line_items")
-      .insert(lineItemsToInsert);
-
-    if (lineItemsError) {
-      console.error("ADMIN INVOICE LINE ITEMS ERROR:", lineItemsError);
-
-      await supabaseAdmin.from("admin_invoices").delete().eq("id", invoice.id);
-
+    if (!Number.isFinite(amountInDollars) || amountInDollars <= 0) {
       return NextResponse.json(
         {
-          error: "Invoice line items could not be saved.",
+          error: "This invoice does not have a valid amount.",
         },
         {
-          status: 500,
+          status: 400,
         }
       );
     }
 
+    const stripe = getStripe();
     const siteUrl = getSiteUrl(request);
+    const amountInCents = Math.round(amountInDollars * 100);
 
     const session = await stripe.checkout.sessions.create({
       mode: "payment",
-      customer_email: clientEmail,
-      payment_method_types: ["card"],
+      customer_email: getCustomerEmail(invoice),
       line_items: [
         {
+          quantity: 1,
           price_data: {
             currency: "usd",
+            unit_amount: amountInCents,
             product_data: {
-              name: invoice.invoice_number
-                ? `${invoice.invoice_number} — ${title}`
-                : title,
-              description: description || "Custom invoice payment request.",
+              name: getInvoiceTitle(invoice),
+              description: `Invoice payment for invoice #${invoiceId}`,
             },
-            unit_amount: Math.round(totalAmount * 100),
           },
-          quantity: 1,
         },
       ],
+      success_url: `${siteUrl}/invoice-success?session_id={CHECKOUT_SESSION_ID}`,
+      cancel_url: `${siteUrl}/dashboard/invoices`,
       metadata: {
-        paymentType: "admin_invoice",
-        invoiceId: String(invoice.id),
-        crmClientId: crmClientId ? String(crmClientId) : "",
-        invoiceNumber: invoice.invoice_number ?? "",
-        clientEmail,
-        subtotalAmount: subtotalAmount.toFixed(2),
-        discountCode,
-        discountAmount: safeDiscountAmount.toFixed(2),
-        tipAmount: safeTipAmount.toFixed(2),
-        totalAmount: totalAmount.toFixed(2),
+        type: "invoice_payment",
+        invoice_id: String(invoiceId),
       },
-      success_url: `${siteUrl}/dashboard/invoices?invoicePaid=${invoice.id}`,
-      cancel_url: `${siteUrl}/dashboard/invoices?invoiceCancelled=${invoice.id}`,
+      payment_intent_data: {
+        metadata: {
+          type: "invoice_payment",
+          invoice_id: String(invoiceId),
+        },
+      },
     });
 
-    const { data: updatedInvoice, error: updateError } = await supabaseAdmin
-      .from("admin_invoices")
-      .update({
-        payment_link: session.url,
-        stripe_session_id: session.id,
-        updated_at: new Date().toISOString(),
-      })
-      .eq("id", invoice.id)
-      .select()
-      .single();
-
-    if (updateError) {
-      console.error("ADMIN INVOICE STRIPE LINK UPDATE ERROR:", updateError);
-    }
+    await updateInvoiceAfterCheckout({
+      invoiceId,
+      sessionId: session.id,
+      url: session.url,
+    });
 
     return NextResponse.json({
-      invoice: updatedInvoice ?? invoice,
-      payment_link: session.url,
+      session_id: session.id,
+      url: session.url,
+      message: "Invoice checkout created.",
     });
   } catch (error) {
-    console.error("ADMIN INVOICE CHECKOUT ERROR:", error);
+    console.error("CREATE INVOICE CHECKOUT ERROR:", error);
 
     return NextResponse.json(
       {
-        error: "Invoice checkout could not be created.",
+        error:
+          error instanceof Error
+            ? error.message
+            : "Invoice checkout could not be created.",
       },
       {
         status: 500,

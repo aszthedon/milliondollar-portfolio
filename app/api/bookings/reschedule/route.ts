@@ -1,70 +1,84 @@
 import { NextResponse } from "next/server";
 
+import { requireAdminRequest } from "@/lib/security/adminGuard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-function timeToMinutes(
-  time: string
-) {
-
-  const [h, m] =
-    time.split(":");
-
-  return (
-    Number(h) * 60 +
-    Number(m)
-  );
+function getBookingId(body: Record<string, unknown>) {
+  return Number(body.booking_id ?? body.bookingId ?? body.id);
 }
 
-function minutesToTime(
-  minutes: number
-) {
-
-  const hours =
-    Math.floor(
-      minutes / 60
-    );
-
-  const mins =
-    minutes % 60;
-
-  return `${String(
-    hours
-  ).padStart(
-    2,
-    "0"
-  )}:${String(
-    mins
-  ).padStart(
-    2,
-    "0"
-  )}`;
+function getBookingDate(body: Record<string, unknown>) {
+  return String(body.booking_date ?? body.bookingDate ?? "").trim();
 }
 
-export async function POST(
-  request: Request
-) {
+function getBookingTime(body: Record<string, unknown>) {
+  return String(body.booking_time ?? body.bookingTime ?? "").trim();
+}
+
+async function updateBookingWithFallback({
+  bookingId,
+  bookingDate,
+  bookingTime,
+}: {
+  bookingId: number;
+  bookingDate: string;
+  bookingTime: string;
+}) {
+  const richUpdate = {
+    booking_date: bookingDate,
+    booking_time: bookingTime,
+    status: "rescheduled",
+    booking_status: "rescheduled",
+    rescheduled_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  };
+
+  const { data, error } = await supabaseAdmin
+    .from("bookings")
+    .update(richUpdate)
+    .eq("id", bookingId)
+    .select("*")
+    .maybeSingle();
+
+  if (!error) {
+    return data;
+  }
+
+  const { data: fallbackData, error: fallbackError } = await supabaseAdmin
+    .from("bookings")
+    .update({
+      booking_date: bookingDate,
+      booking_time: bookingTime,
+    })
+    .eq("id", bookingId)
+    .select("*")
+    .maybeSingle();
+
+  if (fallbackError) {
+    throw fallbackError;
+  }
+
+  return fallbackData;
+}
+
+export async function POST(request: Request) {
+  const unauthorizedResponse = requireAdminRequest(request);
+
+  if (unauthorizedResponse) {
+    return unauthorizedResponse;
+  }
 
   try {
+    const body = await request.json().catch(() => ({}));
 
-    const body =
-      await request.json();
+    const bookingId = getBookingId(body);
+    const bookingDate = getBookingDate(body);
+    const bookingTime = getBookingTime(body);
 
-    const {
-      bookingId,
-      newDate,
-      newTime,
-    } = body;
-
-    if (
-      !bookingId ||
-      !newDate ||
-      !newTime
-    ) {
-
+    if (!Number.isFinite(bookingId)) {
       return NextResponse.json(
         {
-          error:
-            "Missing required fields.",
+          error: "A valid booking ID is required.",
         },
         {
           status: 400,
@@ -72,39 +86,31 @@ export async function POST(
       );
     }
 
-    const {
-      data: booking,
-      error:
-        bookingError,
-    } =
-      await supabaseAdmin
-        .from(
-          "bookings"
-        )
-        .select(
-          `
-          id,
-          service_id,
-          booking_time,
-          booking_end_time,
-          status
-          `
-        )
-        .eq(
-          "id",
-          bookingId
-        )
-        .single();
-
-    if (
-      bookingError ||
-      !booking
-    ) {
-
+    if (!bookingDate || !bookingTime) {
       return NextResponse.json(
         {
-          error:
-            "Booking not found.",
+          error: "A new booking date and booking time are required.",
+        },
+        {
+          status: 400,
+        }
+      );
+    }
+
+    const { data: existingBooking, error: existingError } = await supabaseAdmin
+      .from("bookings")
+      .select("*")
+      .eq("id", bookingId)
+      .maybeSingle();
+
+    if (existingError) {
+      throw existingError;
+    }
+
+    if (!existingBooking) {
+      return NextResponse.json(
+        {
+          error: "Booking was not found.",
         },
         {
           status: 404,
@@ -112,199 +118,25 @@ export async function POST(
       );
     }
 
-    const {
-      data: service,
-    } =
-      await supabaseAdmin
-        .from(
-          "services"
-        )
-        .select(
-          "duration"
-        )
-        .eq(
-          "id",
-          booking.service_id
-        )
-        .single();
+    const booking = await updateBookingWithFallback({
+      bookingId,
+      bookingDate,
+      bookingTime,
+    });
 
-    if (
-      !service
-    ) {
-
-      return NextResponse.json(
-        {
-          error:
-            "Service not found.",
-        },
-        {
-          status: 404,
-        }
-      );
-    }
-
-    const duration =
-      service.duration;
-
-    const newEndTime =
-      minutesToTime(
-        timeToMinutes(
-          newTime
-        ) +
-          duration
-      );
-
-    const {
-      data:
-        existingBookings,
-    } =
-      await supabaseAdmin
-        .from(
-          "bookings"
-        )
-        .select(
-          `
-          id,
-          booking_time,
-          booking_end_time
-          `
-        )
-        .eq(
-          "booking_date",
-          newDate
-        )
-        .neq(
-          "id",
-          bookingId
-        )
-        .neq(
-          "status",
-          "cancelled"
-        );
-
-    const requestedStart =
-      timeToMinutes(
-        newTime
-      );
-
-    const requestedEnd =
-      timeToMinutes(
-        newEndTime
-      );
-
-    const conflict =
-      (
-        existingBookings ??
-        []
-      ).some(
-        (
-          row
-        ) => {
-
-          if (
-            !row.booking_end_time
-          ) {
-            return false;
-          }
-
-          const existingStart =
-            timeToMinutes(
-              row.booking_time
-            );
-
-          const existingEnd =
-            timeToMinutes(
-              row.booking_end_time
-            );
-
-          return (
-            requestedStart <
-              existingEnd &&
-            requestedEnd >
-              existingStart
-          );
-        }
-      );
-
-    if (
-      conflict
-    ) {
-
-      return NextResponse.json(
-        {
-          error:
-            "That new time overlaps an existing booking.",
-        },
-        {
-          status: 409,
-        }
-      );
-    }
-
-    const {
-      error:
-        updateError,
-    } =
-      await supabaseAdmin
-        .from(
-          "bookings"
-        )
-        .update({
-
-          booking_date:
-            newDate,
-
-          booking_time:
-            newTime,
-
-          booking_end_time:
-            newEndTime,
-
-          status:
-            "rescheduled",
-        })
-        .eq(
-          "id",
-          bookingId
-        );
-
-    if (
-      updateError
-    ) {
-
-      console.error(
-        updateError
-      );
-
-      return NextResponse.json(
-        {
-          error:
-            "Reschedule failed.",
-        },
-        {
-          status: 500,
-        }
-      );
-    }
-
-    return NextResponse.json(
-      {
-        success: true,
-      }
-    );
-
-  } catch (
-    error
-  ) {
-
-    console.error(
-      error
-    );
+    return NextResponse.json({
+      booking,
+      message: "Booking rescheduled.",
+    });
+  } catch (error) {
+    console.error("RESCHEDULE BOOKING ERROR:", error);
 
     return NextResponse.json(
       {
         error:
-          "Server error.",
+          error instanceof Error
+            ? error.message
+            : "Booking could not be rescheduled.",
       },
       {
         status: 500,

@@ -1,490 +1,314 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useMemo, useState } from "react";
 
-import { supabase } from "@/lib/supabase";
+type ProjectRow = Record<string, any>;
+type ClientRow = Record<string, any>;
 
-interface Booking {
-  id: number;
-  booking_date: string;
-  booking_time: string;
-  payment_status: string;
-  status: string;
-  notes: string;
-  service_id: number;
-  customer_email: string;
-  meeting_link: string;
+function getProjectTitle(project: ProjectRow) {
+  return (
+    project.project_title ||
+    project.title ||
+    project.name ||
+    `Project #${project.id}`
+  );
 }
 
-interface ClientFile {
-  id: number;
-  booking_id: number;
-  file_name: string;
-  file_url: string;
+function getProjectStatus(project: ProjectRow) {
+  return String(project.project_status || project.status || "active").replaceAll(
+    "_",
+    " "
+  );
 }
 
-interface Message {
-  id: number;
-  booking_id: number;
-  sender: string;
-  message: string;
-  created_at: string;
-}
-
-export default function ClientPage() {
-  const [bookings, setBookings] =
-    useState<Booking[]>([]);
-
-  const [files, setFiles] =
-    useState<ClientFile[]>([]);
-
-  const [messages, setMessages] =
-    useState<Message[]>([]);
-
-  const [newMessage, setNewMessage] =
-    useState("");
-
-  const [newDate, setNewDate] =
-    useState("");
-
-  const [newTime, setNewTime] =
-    useState("");
-
-  const [loadingId, setLoadingId] =
-    useState<number | null>(
-      null
-    );
-
-  async function fetchBookings() {
-    const {
-      data: { user },
-    } = await supabase.auth.getUser();
-
-    if (!user) return;
-
-    const { data } = await supabase
-      .from("bookings")
-      .select("*")
-      .eq("client_id", user.id)
-      .order("id", {
-        ascending: false,
-      });
-
-    if (data) {
-      setBookings(data);
-
-      const bookingIds =
-        data.map(
-          (booking) =>
-            booking.id
-        );
-
-      if (
-        bookingIds.length >
-        0
-      ) {
-        const {
-          data: fileData,
-        } = await supabase
-          .from("client_files")
-          .select("*")
-          .in(
-            "booking_id",
-            bookingIds
-          );
-
-        if (fileData) {
-          setFiles(
-            fileData
-          );
-        }
-
-        const {
-          data: messageData,
-        } = await supabase
-          .from(
-            "booking_messages"
-          )
-          .select("*")
-          .in(
-            "booking_id",
-            bookingIds
-          )
-          .order(
-            "created_at",
-            {
-              ascending:
-                true,
-            }
-          );
-
-        if (
-          messageData
-        ) {
-          setMessages(
-            messageData
-          );
-        }
-      }
-    }
+function formatDate(value: unknown) {
+  if (!value) {
+    return "Not set";
   }
 
-  async function sendMessage(
-    bookingId: number
-  ) {
-    if (!newMessage)
+  const date = new Date(String(value));
+
+  if (Number.isNaN(date.getTime())) {
+    return String(value);
+  }
+
+  return date.toLocaleDateString();
+}
+
+export default function ClientProjectsPage() {
+  const [token, setToken] = useState("");
+  const [manualToken, setManualToken] = useState("");
+  const [client, setClient] = useState<ClientRow | null>(null);
+  const [projects, setProjects] = useState<ProjectRow[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
+
+  async function loadProjects(nextToken: string) {
+    if (!nextToken.trim()) {
+      setLoading(false);
+      setError("A project portal token is required.");
       return;
-
-    await supabase
-      .from(
-        "booking_messages"
-      )
-      .insert({
-        booking_id:
-          bookingId,
-
-        sender:
-          "client",
-
-        message:
-          newMessage,
-      });
-
-    await supabase
-      .from(
-        "notifications"
-      )
-      .insert({
-        user_role:
-          "admin",
-
-        content:
-          "New client message received.",
-      });
-
-    setNewMessage("");
-
-    fetchBookings();
-  }
-
-  async function rescheduleBooking(
-  booking: Booking
-) {
-  if (
-    !newDate ||
-    !newTime
-  ) {
-    alert(
-      "Select a new date and time."
-    );
-
-    return;
-  }
-
-  try {
-    setLoadingId(
-      booking.id
-    );
-
-    const response =
-      await fetch(
-        "/api/bookings/reschedule",
-        {
-          method:
-            "POST",
-
-          headers: {
-            "Content-Type":
-              "application/json",
-          },
-
-          body:
-            JSON.stringify(
-              {
-                bookingId:
-                  booking.id,
-
-                newDate,
-
-                newTime,
-              }
-            ),
-        }
-      );
-
-    const data =
-      await response.json();
-
-    if (
-      !response.ok
-    ) {
-      throw new Error(
-        data.error ??
-          "Reschedule failed."
-      );
     }
-
-    alert(
-      "Booking rescheduled!"
-    );
-
-    setNewDate("");
-    setNewTime("");
-
-    await fetchBookings();
-
-    setLoadingId(
-      null
-    );
-  } catch (error) {
-    console.error(
-      error
-    );
-
-    alert(
-      error instanceof
-        Error
-        ? error.message
-        : "Reschedule failed."
-    );
-
-    setLoadingId(
-      null
-    );
-  }
-}
-
-  async function cancelBooking(
-    booking: Booking
-  ) {
-    const confirmed =
-      window.confirm(
-        "Cancel this booking?"
-      );
-
-    if (!confirmed)
-      return;
 
     try {
-      setLoadingId(
-        booking.id
-      );
+      setLoading(true);
+      setError("");
+      setSuccess("");
 
-      const response =
-        await fetch(
-          "/api/bookings/cancel",
-          {
-            method:
-              "POST",
+      const params = new URLSearchParams({
+        token: nextToken.trim(),
+      });
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      const response = await fetch(`/api/client/project-portal-token?${params}`, {
+        method: "GET",
+        cache: "no-store",
+      });
 
-            body:
-              JSON.stringify(
-                {
-                  bookingId:
-                    booking.id,
-                }
-              ),
-          }
-        );
+      const data = await response.json();
 
-      const data =
-        await response.json();
-
-      if (
-        !response.ok
-      ) {
-        throw new Error(
-          data.error ??
-            "Cancellation failed."
-        );
+      if (!response.ok) {
+        throw new Error(data.error ?? "Project portal could not be loaded.");
       }
 
-      await fetchBookings();
+      setClient(data.client ?? null);
+      setProjects(data.projects ?? []);
 
-      setLoadingId(
-        null
-      );
-    } catch (
-      error
-    ) {
-      console.error(
-        error
-      );
+      await fetch("/api/client/log-project-portal-access", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          token: nextToken.trim(),
+        }),
+      }).catch(() => null);
 
-      alert(
-        "Cancellation failed."
+      setSuccess(data.message ?? "Project portal loaded.");
+    } catch (loadError) {
+      setError(
+        loadError instanceof Error
+          ? loadError.message
+          : "Project portal could not be loaded."
       );
-
-      setLoadingId(
-        null
-      );
+      setClient(null);
+      setProjects([]);
+    } finally {
+      setLoading(false);
     }
   }
 
+  const activeProjects = useMemo(() => {
+    return projects.filter((project) =>
+      ["active", "in_progress", "review"].includes(
+        String(project.project_status || project.status || "").toLowerCase()
+      )
+    );
+  }, [projects]);
+
+  const completedProjects = useMemo(() => {
+    return projects.filter((project) =>
+      ["completed", "archived"].includes(
+        String(project.project_status || project.status || "").toLowerCase()
+      )
+    );
+  }, [projects]);
+
   useEffect(() => {
-    fetchBookings();
+    const params = new URLSearchParams(window.location.search);
+    const urlToken = params.get("token") ?? "";
 
-    const channel =
-      supabase
-        .channel(
-          "booking-messages-client"
-        )
-        .on(
-          "postgres_changes",
-          {
-            event: "*",
-            schema:
-              "public",
-            table:
-              "booking_messages",
-          },
-          () => {
-            fetchBookings();
-          }
-        )
-        .subscribe();
+    setToken(urlToken);
+    setManualToken(urlToken);
 
-    return () => {
-      supabase.removeChannel(
-        channel
-      );
-    };
+    loadProjects(urlToken);
   }, []);
 
   return (
-    <main className="min-h-screen bg-black p-10 text-white">
-      <div className="mb-12">
-        <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
-          Client Dashboard
-        </p>
+    <main className="min-h-screen bg-black px-6 py-10 text-white">
+      <div className="mx-auto grid max-w-6xl gap-6">
+        <div className="rounded-3xl border border-white/10 bg-white/5 p-6">
+          <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
+            Million Dollar Ticket Productions
+          </p>
 
-        <h1 className="text-5xl font-bold">
-          Your Bookings
-        </h1>
-      </div>
+          <h1 className="mt-3 text-4xl font-black">Client Project Portal</h1>
 
-      <div className="grid gap-6">
-        {bookings.map(
-          (booking) => {
-            const bookingFiles =
-              files.filter(
-                (file) =>
-                  file.booking_id ===
-                  booking.id
-              );
+          <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
+            View project status, timelines, deliverables, and updates connected
+            to your booking, invoice, or contract.
+          </p>
+        </div>
 
-            return (
-              <div
-                key={
-                  booking.id
-                }
-                className="rounded-3xl border border-white/10 bg-white/5 p-8"
-              >
-                <div className="flex flex-col gap-6 md:flex-row md:items-start md:justify-between">
+        {error && (
+          <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+            {error}
+          </div>
+        )}
 
-                  {/* existing left content unchanged */}
+        {success && !error && (
+          <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-200">
+            {success}
+          </div>
+        )}
 
-                  <div className="flex flex-col gap-3">
+        {!token && (
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+            <label className="grid gap-2">
+              <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">
+                Portal Token
+              </span>
 
-                    <div className="rounded-full border border-white/10 px-4 py-2 text-sm">
-                      Booking Status:{" "}
-                      {
-                        booking.status
-                      }
-                    </div>
+              <input
+                value={manualToken}
+                onChange={(event) => setManualToken(event.target.value)}
+                placeholder="Paste your project portal token"
+                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none"
+              />
+            </label>
 
-                    <div className="rounded-full border border-green-500 px-4 py-2 text-sm text-green-400">
-                      Payment:{" "}
-                      {
-                        booking.payment_status
-                      }
-                    </div>
+            <button
+              type="button"
+              onClick={() => loadProjects(manualToken)}
+              className="mt-4 rounded-full bg-white px-5 py-3 text-sm font-black text-black"
+            >
+              Load Portal
+            </button>
+          </div>
+        )}
 
-                    <input
-                      type="date"
-                      value={
-                        newDate
-                      }
-                      onChange={(
-                        e
-                      ) =>
-                        setNewDate(
-                          e.target
-                            .value
-                        )
-                      }
-                      className="rounded-xl border border-white/10 bg-black px-4 py-2 text-sm"
-                    />
+        {loading ? (
+          <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-zinc-400">
+            Loading project portal...
+          </div>
+        ) : (
+          <>
+            {client && (
+              <div className="rounded-3xl border border-blue-500/20 bg-blue-500/10 p-5">
+                <p className="text-xs uppercase tracking-[0.2em] text-blue-300">
+                  Client
+                </p>
 
-                    <input
-                      type="time"
-                      value={
-                        newTime
-                      }
-                      onChange={(
-                        e
-                      ) =>
-                        setNewTime(
-                          e.target
-                            .value
-                        )
-                      }
-                      className="rounded-xl border border-white/10 bg-black px-4 py-2 text-sm"
-                    />
+                <h2 className="mt-2 text-2xl font-black">
+                  {client.full_name ||
+                    client.name ||
+                    client.client_name ||
+                    client.email ||
+                    "Client Portal"}
+                </h2>
 
-                    <button
-                        disabled={
-                          loadingId ===
-                          booking.id
-                        }
-                        onClick={() =>
-                          rescheduleBooking(
-                            booking
-                          )
-                        }
-                        className="rounded-full border border-blue-500 px-4 py-2 text-sm text-blue-400 transition hover:bg-blue-500 hover:text-white disabled:opacity-50"
-                      >
-                        {loadingId ===
-                        booking.id
-                          ? "Rescheduling..."
-                          : "Reschedule"}
-                      </button>
-
-                    {booking.status !==
-                      "cancelled" && (
-                      <button
-                        disabled={
-                          loadingId ===
-                          booking.id
-                        }
-                        onClick={() =>
-                          cancelBooking(
-                            booking
-                          )
-                        }
-                        className="rounded-full border border-red-500 px-4 py-2 text-sm text-red-400 transition hover:bg-red-500 hover:text-white disabled:opacity-50"
-                      >
-                        {loadingId ===
-                        booking.id
-                          ? "Cancelling..."
-                          : "Cancel Booking"}
-                      </button>
-                    )}
-                  </div>
-                </div>
+                <p className="mt-2 text-sm text-zinc-300">
+                  {client.email || client.customer_email || client.client_email || ""}
+                </p>
               </div>
-            );
-          }
+            )}
+
+            <div className="grid gap-4 sm:grid-cols-3">
+              <Metric label="Total Projects" value={projects.length} />
+              <Metric label="Active" value={activeProjects.length} />
+              <Metric label="Completed" value={completedProjects.length} />
+            </div>
+
+            <section className="grid gap-4">
+              <h2 className="text-2xl font-black">Active Projects</h2>
+
+              {activeProjects.length > 0 ? (
+                activeProjects.map((project) => (
+                  <ProjectCard key={project.id} project={project} />
+                ))
+              ) : (
+                <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-zinc-400">
+                  No active projects found.
+                </div>
+              )}
+            </section>
+
+            {completedProjects.length > 0 && (
+              <section className="grid gap-4">
+                <h2 className="text-2xl font-black">Completed Projects</h2>
+
+                {completedProjects.map((project) => (
+                  <ProjectCard key={project.id} project={project} />
+                ))}
+              </section>
+            )}
+          </>
         )}
       </div>
     </main>
+  );
+}
+
+function Metric({ label, value }: { label: string; value: string | number }) {
+  return (
+    <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+        {label}
+      </p>
+
+      <p className="mt-3 text-3xl font-black">{value}</p>
+    </div>
+  );
+}
+
+function ProjectCard({ project }: { project: ProjectRow }) {
+  const deliverables = Array.isArray(project.deliverables)
+    ? project.deliverables
+    : [];
+
+  const updates = Array.isArray(project.updates) ? project.updates : [];
+
+  return (
+    <article className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <div className="flex flex-wrap gap-2">
+        <span className="rounded-full border border-white/10 px-3 py-1 text-xs text-zinc-300">
+          #{project.id}
+        </span>
+
+        <span className="rounded-full border border-blue-500/30 px-3 py-1 text-xs text-blue-300">
+          {getProjectStatus(project)}
+        </span>
+      </div>
+
+      <h3 className="mt-3 text-xl font-black">{getProjectTitle(project)}</h3>
+
+      <div className="mt-3 grid gap-1 text-sm text-zinc-400">
+        <p>Due: {formatDate(project.due_date || project.deadline)}</p>
+        <p>
+          Source: {project.source_type || project.created_from || "project"}
+        </p>
+        {project.description && <p>{project.description}</p>}
+      </div>
+
+      {deliverables.length > 0 && (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+            Deliverables
+          </p>
+
+          <ul className="mt-3 grid gap-2 text-sm text-zinc-300">
+            {deliverables.map((deliverable: unknown, index: number) => (
+              <li key={`${String(deliverable)}-${index}`}>
+                • {String(deliverable)}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+
+      {updates.length > 0 && (
+        <div className="mt-5 rounded-2xl border border-white/10 bg-black p-4">
+          <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+            Updates
+          </p>
+
+          <ul className="mt-3 grid gap-2 text-sm text-zinc-300">
+            {updates.map((update: unknown, index: number) => (
+              <li key={`${String(update)}-${index}`}>• {String(update)}</li>
+            ))}
+          </ul>
+        </div>
+      )}
+    </article>
   );
 }
