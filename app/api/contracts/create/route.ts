@@ -13,6 +13,16 @@ function getSiteUrl(request: Request) {
   ).replace(/\/$/, "");
 }
 
+function getStringId(value: unknown) {
+  return String(value ?? "").trim();
+}
+
+function getNumericIdOrNull(value: string) {
+  const numericValue = Number(value);
+
+  return Number.isFinite(numericValue) ? numericValue : null;
+}
+
 function getClientName(client: Record<string, unknown>) {
   return String(
     client.full_name ||
@@ -52,6 +62,69 @@ function getTemplateBody(template: Record<string, unknown>) {
   );
 }
 
+async function findRecordById(table: string, id: string) {
+  const { data, error } = await supabaseAdmin
+    .from(table)
+    .select("*")
+    .eq("id", id)
+    .maybeSingle();
+
+  if (error) {
+    throw error;
+  }
+
+  return data;
+}
+
+async function insertContractWithFallback({
+  basePayload,
+  clientId,
+  templateId,
+}: {
+  basePayload: Record<string, unknown>;
+  clientId: string;
+  templateId: string;
+}) {
+  const insertAttempts = [
+    {
+      ...basePayload,
+      client_id: clientId,
+      template_id: templateId,
+    },
+    {
+      ...basePayload,
+      client_id: getNumericIdOrNull(clientId),
+      template_id: getNumericIdOrNull(templateId),
+    },
+    {
+      ...basePayload,
+      client_id: null,
+      template_id: getNumericIdOrNull(templateId),
+    },
+    {
+      ...basePayload,
+    },
+  ];
+
+  let lastError: unknown = null;
+
+  for (const payload of insertAttempts) {
+    const { data, error } = await supabaseAdmin
+      .from("client_contracts")
+      .insert(payload)
+      .select("*")
+      .single();
+
+    if (!error) {
+      return data;
+    }
+
+    lastError = error;
+  }
+
+  throw lastError;
+}
+
 export async function POST(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
 
@@ -62,11 +135,11 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
 
-    const clientId = Number(body.client_id ?? body.clientId);
-    const templateId = Number(body.template_id ?? body.templateId);
+    const clientId = getStringId(body.client_id ?? body.clientId);
+    const templateId = getStringId(body.template_id ?? body.templateId);
     const contractTitle = String(body.contract_title ?? body.title ?? "").trim();
 
-    if (!Number.isFinite(clientId)) {
+    if (!clientId) {
       return NextResponse.json(
         {
           error: "A valid client ID is required.",
@@ -77,7 +150,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!Number.isFinite(templateId)) {
+    if (!templateId) {
       return NextResponse.json(
         {
           error: "A valid contract template ID is required.",
@@ -88,24 +161,12 @@ export async function POST(request: Request) {
       );
     }
 
-    const [clientResult, templateResult] = await Promise.all([
-      supabaseAdmin.from("crm_clients").select("*").eq("id", clientId).maybeSingle(),
-      supabaseAdmin
-        .from("contract_templates")
-        .select("*")
-        .eq("id", templateId)
-        .maybeSingle(),
+    const [client, template] = await Promise.all([
+      findRecordById("crm_clients", clientId),
+      findRecordById("contract_templates", templateId),
     ]);
 
-    if (clientResult.error) {
-      throw clientResult.error;
-    }
-
-    if (templateResult.error) {
-      throw templateResult.error;
-    }
-
-    if (!clientResult.data) {
+    if (!client) {
       return NextResponse.json(
         {
           error: "Client was not found.",
@@ -116,7 +177,7 @@ export async function POST(request: Request) {
       );
     }
 
-    if (!templateResult.data) {
+    if (!template) {
       return NextResponse.json(
         {
           error: "Contract template was not found.",
@@ -127,16 +188,14 @@ export async function POST(request: Request) {
       );
     }
 
-    const client = clientResult.data;
-    const template = templateResult.data;
     const signingToken = crypto.randomBytes(32).toString("hex");
     const siteUrl = getSiteUrl(request);
-    const signingUrl = `${siteUrl}/contracts/sign?token=${signingToken}`;
+    const signingUrl = `${siteUrl}/contracts/${signingToken}`;
 
-    const insertPayload = {
-      client_id: clientId,
-      template_id: templateId,
+    const basePayload = {
       contract_title:
+        contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`,
+      title:
         contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`,
       template_name: getTemplateName(template),
       client_name: getClientName(client),
@@ -149,20 +208,18 @@ export async function POST(request: Request) {
       signing_token: signingToken,
       signing_url: signingUrl,
       sent_at: new Date().toISOString(),
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
     };
 
-    const { data, error } = await supabaseAdmin
-      .from("client_contracts")
-      .insert(insertPayload)
-      .select("*")
-      .single();
-
-    if (error) {
-      throw error;
-    }
+    const contract = await insertContractWithFallback({
+      basePayload,
+      clientId,
+      templateId,
+    });
 
     return NextResponse.json({
-      contract: data,
+      contract,
       signing_url: signingUrl,
       message: "Contract created.",
     });
