@@ -45,6 +45,16 @@ function getTemplateLabel(template: TemplateRow) {
   );
 }
 
+function getTemplateContent(template: TemplateRow) {
+  return (
+    template.contract_body ||
+    template.content ||
+    template.body ||
+    template.template_body ||
+    ""
+  );
+}
+
 function getContractStatus(contract: ContractRow) {
   return String(
     contract.contract_status || contract.status || "unknown"
@@ -68,6 +78,10 @@ export default function DashboardContractsPage() {
   const [newClientId, setNewClientId] = useState("");
   const [newTemplateId, setNewTemplateId] = useState("");
   const [newContractTitle, setNewContractTitle] = useState("");
+
+  const [newTemplateName, setNewTemplateName] = useState("");
+  const [newTemplateContent, setNewTemplateContent] = useState("");
+  const [showTemplateForm, setShowTemplateForm] = useState(false);
 
   async function fetchContracts() {
     try {
@@ -124,6 +138,67 @@ export default function DashboardContractsPage() {
       );
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function createTemplate() {
+    const templateName = newTemplateName.trim();
+    const templateContent = newTemplateContent.trim();
+
+    if (!templateName) {
+      setError("Enter a template name.");
+      return;
+    }
+
+    if (!templateContent) {
+      setError("Enter template content/body.");
+      return;
+    }
+
+    try {
+      setActionLoading("create-template");
+      setError("");
+      setSuccess("");
+      setCreatedSigningUrl("");
+
+      const response = await fetch("/api/contracts/templates", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getDashboardAuthHeaders(),
+        },
+        body: JSON.stringify({
+          template_name: templateName,
+          title: templateName,
+          contract_body: templateContent,
+          content: templateContent,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Contract template could not be created.");
+      }
+
+      setSuccess(data.message ?? "Contract template created.");
+      setNewTemplateName("");
+      setNewTemplateContent("");
+      setShowTemplateForm(false);
+
+      await fetchContracts();
+
+      if (data.template?.id) {
+        setNewTemplateId(String(data.template.id));
+      }
+    } catch (templateError) {
+      setError(
+        templateError instanceof Error
+          ? templateError.message
+          : "Contract template could not be created."
+      );
+    } finally {
+      setActionLoading("");
     }
   }
 
@@ -278,6 +353,12 @@ export default function DashboardContractsPage() {
     });
   }, [contracts, search, statusFilter]);
 
+  const selectedTemplate = useMemo(() => {
+    return templates.find(
+      (template) => String(template.id) === String(newTemplateId)
+    );
+  }, [templates, newTemplateId]);
+
   useEffect(() => {
     fetchContracts();
   }, []);
@@ -295,8 +376,8 @@ export default function DashboardContractsPage() {
               <h1 className="mt-3 text-4xl font-black">Contracts</h1>
 
               <p className="mt-2 text-sm text-zinc-400">
-                Create contracts, monitor signature status, copy signing links,
-                and create projects from signed agreements.
+                Create templates, generate contracts, copy signing links, and
+                create projects from agreements.
               </p>
             </div>
 
@@ -344,12 +425,85 @@ export default function DashboardContractsPage() {
           )}
 
           <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <h2 className="text-xl font-black">Contract Templates</h2>
+
+                <p className="mt-2 text-sm text-zinc-400">
+                  Create reusable agreement templates for production work.
+                </p>
+              </div>
+
+              <button
+                type="button"
+                onClick={() => setShowTemplateForm((value) => !value)}
+                className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white"
+              >
+                {showTemplateForm ? "Close Template Form" : "Create Template"}
+              </button>
+            </div>
+
+            {showTemplateForm && (
+              <div className="mt-5 grid gap-3">
+                <input
+                  value={newTemplateName}
+                  onChange={(event) => setNewTemplateName(event.target.value)}
+                  placeholder="Template name, e.g. Standard Production Agreement"
+                  className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm text-white outline-none"
+                />
+
+                <textarea
+                  value={newTemplateContent}
+                  onChange={(event) =>
+                    setNewTemplateContent(event.target.value)
+                  }
+                  placeholder="Template content/body..."
+                  className="min-h-48 rounded-2xl border border-white/10 bg-black px-4 py-3 text-sm leading-6 text-white outline-none"
+                />
+
+                <button
+                  type="button"
+                  onClick={createTemplate}
+                  disabled={actionLoading === "create-template"}
+                  className="w-fit rounded-full bg-blue-500 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+                >
+                  {actionLoading === "create-template"
+                    ? "Creating Template..."
+                    : "Save Template"}
+                </button>
+              </div>
+            )}
+
+            <div className="mt-5 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
+              {templates.length === 0 ? (
+                <div className="rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
+                  No contract templates found yet.
+                </div>
+              ) : (
+                templates.slice(0, 6).map((template) => (
+                  <div
+                    key={String(template.id)}
+                    className="rounded-2xl border border-white/10 bg-black p-4"
+                  >
+                    <p className="font-bold text-white">
+                      {getTemplateLabel(template)}
+                    </p>
+
+                    <p className="mt-2 line-clamp-3 text-xs leading-5 text-zinc-500">
+                      {getTemplateContent(template) || "No template body saved."}
+                    </p>
+                  </div>
+                ))
+              )}
+            </div>
+          </section>
+
+          <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
             <div className="mb-4">
               <h2 className="text-xl font-black">Create Contract</h2>
 
               <p className="mt-2 text-sm text-zinc-400">
-                Choose a client and contract template. Client IDs are sent as
-                strings so UUID clients work correctly.
+                Choose a client and template, then generate a signing link.
               </p>
             </div>
 
@@ -366,7 +520,9 @@ export default function DashboardContractsPage() {
                 {clients.map((client) => (
                   <option key={String(client.id)} value={String(client.id)}>
                     {getClientLabel(client)}
-                    {getClientEmail(client) ? ` — ${getClientEmail(client)}` : ""}
+                    {getClientEmail(client)
+                      ? ` — ${getClientEmail(client)}`
+                      : ""}
                   </option>
                 ))}
               </select>
@@ -410,6 +566,23 @@ export default function DashboardContractsPage() {
               </button>
             </div>
 
+            {selectedTemplate && (
+              <div className="mt-4 rounded-2xl border border-white/10 bg-black p-4">
+                <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
+                  Selected Template Preview
+                </p>
+
+                <p className="mt-2 font-bold text-white">
+                  {getTemplateLabel(selectedTemplate)}
+                </p>
+
+                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-zinc-400">
+                  {getTemplateContent(selectedTemplate) ||
+                    "No template content saved."}
+                </p>
+              </div>
+            )}
+
             {(clients.length === 0 || templates.length === 0) && !loading && (
               <div className="mt-4 rounded-2xl border border-yellow-500/30 bg-yellow-500/10 p-4 text-sm text-yellow-100">
                 {clients.length === 0 && (
@@ -422,8 +595,8 @@ export default function DashboardContractsPage() {
                 {templates.length === 0 && (
                   <p className={clients.length === 0 ? "mt-2" : ""}>
                     No templates were found in{" "}
-                    <strong>contract_templates</strong>. Add a contract template
-                    before creating a contract.
+                    <strong>contract_templates</strong>. Create one above before
+                    generating a contract.
                   </p>
                 )}
               </div>
