@@ -4,40 +4,12 @@ import {
   createDashboardToken,
   getClientIpAddress,
   getDashboardAuthCookie,
-  getDashboardClearCookie,
   hashAdminIdentifier,
   verifyDashboardPassword,
 } from "@/lib/security/adminGuard";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
-async function isIpBlocked(ipAddress: string) {
-  try {
-    const { data, error } = await supabaseAdmin
-      .from("admin_ip_blocklist")
-      .select("*")
-      .eq("ip_address", ipAddress)
-      .eq("is_active", true)
-      .maybeSingle();
-
-    if (error) {
-      return false;
-    }
-
-    if (!data) {
-      return false;
-    }
-
-    if (data.expires_at && new Date(data.expires_at).getTime() < Date.now()) {
-      return false;
-    }
-
-    return true;
-  } catch {
-    return false;
-  }
-}
-
-async function logAttempt({
+async function logLoginAttempt({
   request,
   success,
   reason,
@@ -54,11 +26,13 @@ async function logAttempt({
       ip_address: ipAddress,
       ip_hash: hashAdminIdentifier(ipAddress),
       user_agent: userAgent,
+      user_agent_hash: hashAdminIdentifier(userAgent),
       success,
       reason,
+      created_at: new Date().toISOString(),
     });
   } catch {
-    // Do not block login because logging failed.
+    // Do not block login if logging table is missing/different.
   }
 }
 
@@ -66,29 +40,9 @@ export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
     const password = String(body.password ?? "");
-    const ipAddress = getClientIpAddress(request);
-
-    const blocked = await isIpBlocked(ipAddress);
-
-    if (blocked) {
-      await logAttempt({
-        request,
-        success: false,
-        reason: "blocked_ip",
-      });
-
-      return NextResponse.json(
-        {
-          error: "This IP address is blocked from dashboard login.",
-        },
-        {
-          status: 403,
-        }
-      );
-    }
 
     if (!verifyDashboardPassword(password)) {
-      await logAttempt({
+      await logLoginAttempt({
         request,
         success: false,
         reason: "invalid_password",
@@ -104,18 +58,17 @@ export async function POST(request: Request) {
       );
     }
 
-    await logAttempt({
+    const token = createDashboardToken();
+
+    await logLoginAttempt({
       request,
       success: true,
       reason: "login_success",
     });
 
-    const token = createDashboardToken();
-    const expiresAt = new Date(Date.now() + 1000 * 60 * 60 * 12).toISOString();
-
     const response = NextResponse.json({
       token,
-      expires_at: expiresAt,
+      expires_in_seconds: 60 * 60 * 12,
       message: "Dashboard unlocked.",
     });
 
@@ -134,14 +87,4 @@ export async function POST(request: Request) {
       }
     );
   }
-}
-
-export async function DELETE() {
-  const response = NextResponse.json({
-    message: "Dashboard session cleared.",
-  });
-
-  response.headers.set("Set-Cookie", getDashboardClearCookie());
-
-  return response;
 }

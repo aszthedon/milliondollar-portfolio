@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { FormEvent, useState } from "react";
-import { useRouter, useSearchParams } from "next/navigation";
+import { useSearchParams } from "next/navigation";
 
 import { loginDashboard } from "@/lib/security/dashboardClientAuth";
 
@@ -23,7 +23,6 @@ function getSafeNextPath(value: string | null) {
 }
 
 export default function DashboardLoginClient() {
-  const router = useRouter();
   const searchParams = useSearchParams();
 
   const nextPath = getSafeNextPath(searchParams.get("next"));
@@ -31,6 +30,7 @@ export default function DashboardLoginClient() {
   const [password, setPassword] = useState("");
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -43,11 +43,17 @@ export default function DashboardLoginClient() {
     try {
       setLoading(true);
       setError("");
+      setSuccess("");
 
-      await loginDashboard(password);
+      const result = await loginDashboard(password);
 
-      router.push(nextPath);
-      router.refresh();
+      if (!result?.token) {
+        throw new Error("Login succeeded, but no dashboard token was returned.");
+      }
+
+      setSuccess("Dashboard unlocked. Redirecting...");
+
+      window.location.assign(nextPath);
     } catch (loginError) {
       setError(
         loginError instanceof Error
@@ -69,13 +75,18 @@ export default function DashboardLoginClient() {
         <h1 className="mt-3 text-4xl font-black">Dashboard Login</h1>
 
         <p className="mt-3 text-sm leading-6 text-zinc-400">
-          Enter your dashboard password to unlock admin tools, bookings,
-          clients, invoices, contracts, projects, reminders, and analytics.
+          Enter your dashboard password to unlock admin tools.
         </p>
 
         {error && (
           <div className="mt-5 rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
             {error}
+          </div>
+        )}
+
+        {success && (
+          <div className="mt-5 rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-200">
+            {success}
           </div>
         )}
 
