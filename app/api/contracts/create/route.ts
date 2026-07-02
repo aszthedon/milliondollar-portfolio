@@ -227,23 +227,28 @@ export async function POST(request: Request) {
 
     const now = new Date().toISOString();
 
-    const basePayload = {
-      contract_title: defaultTitle,
-      title: defaultTitle,
-      template_name: getTemplateName(template),
-      client_name: getClientName(client),
-      client_email: getClientEmail(client),
-      signer_name: getClientName(client),
-      signer_email: getClientEmail(client),
-      contract_body: getTemplateBody(template),
-      contract_status: "sent",
-      status: "sent",
-      signing_token: signingToken,
-      signing_url: signingUrl,
-      sent_at: now,
-      created_at: now,
-      updated_at: now,
-    };
+  const contractContent =
+    getTemplateBody(template) ||
+    "This agreement confirms the production services, deliverables, payment expectations, and client approval process for Million Dollar Ticket Productions.";
+
+  const basePayload = {
+    contract_title: defaultTitle,
+    title: defaultTitle,
+    template_name: getTemplateName(template),
+    client_name: getClientName(client),
+    client_email: getClientEmail(client),
+    signer_name: getClientName(client),
+    signer_email: getClientEmail(client),
+    contract_body: contractContent,
+   content: contractContent,
+    contract_status: "sent",
+    status: "sent",
+    signing_token: signingToken,
+    signing_url: signingUrl,
+    sent_at: now,
+    created_at: now,
+    updated_at: now,
+  };
 
     const contract = await insertContractWithFallback({
       basePayload,
