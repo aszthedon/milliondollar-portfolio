@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, {
@@ -78,11 +79,22 @@ function calculateDepositBaseAmount({
   return Math.min((discountedPrice * depositValue) / 100, discountedPrice);
 }
 
-async function upsertCrmClient(customerEmail: string) {
+async function upsertCrmClient(customerEmail: string, siteSlug: string) {
   const cleanEmail = customerEmail.trim().toLowerCase();
 
   if (!cleanEmail) {
     return null;
+  }
+
+  const existingClient = await supabaseAdmin
+    .from("crm_clients")
+    .select("id")
+    .eq("email", cleanEmail)
+    .eq("site_slug", siteSlug)
+    .maybeSingle();
+
+  if (!existingClient.error && existingClient.data?.id) {
+    return existingClient.data.id;
   }
 
   const { data, error } = await supabaseAdmin
@@ -90,6 +102,7 @@ async function upsertCrmClient(customerEmail: string) {
     .upsert(
       {
         email: cleanEmail,
+        site_slug: siteSlug,
         source: "booking",
         last_contacted_at: new Date().toISOString(),
       },
@@ -111,6 +124,7 @@ async function upsertCrmClient(customerEmail: string) {
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const siteSlug = getServerSiteSlug();
 
     const {
       service_id,
@@ -160,7 +174,7 @@ export async function POST(request: Request) {
       );
     }
 
-    const crmClientId = await upsertCrmClient(cleanCustomerEmail);
+    const crmClientId = await upsertCrmClient(cleanCustomerEmail, siteSlug);
 
     const bookingEndTime =
       booking_end_time ??
@@ -198,6 +212,7 @@ export async function POST(request: Request) {
             timezone
           `
         )
+        .eq("site_slug", siteSlug)
         .eq("available_date", booking_date);
 
     if (availabilityError) {
@@ -249,6 +264,7 @@ export async function POST(request: Request) {
             status
           `
         )
+        .eq("site_slug", siteSlug)
         .eq("booking_date", booking_date);
 
     if (existingBookingsError) {
@@ -298,6 +314,7 @@ export async function POST(request: Request) {
       const { data: variation, error: variationError } = await supabaseAdmin
         .from("service_variations")
         .select("payment_mode, deposit_type, deposit_value")
+        .eq("site_slug", siteSlug)
         .eq("id", variationId)
         .maybeSingle();
 
@@ -314,6 +331,7 @@ export async function POST(request: Request) {
       const { data: service, error: serviceError } = await supabaseAdmin
         .from("services")
         .select("payment_mode, deposit_type, deposit_value")
+        .eq("site_slug", siteSlug)
         .eq("id", serviceId)
         .maybeSingle();
 
@@ -340,6 +358,7 @@ export async function POST(request: Request) {
       const { data: discount, error: discountError } = await supabaseAdmin
         .from("discount_codes")
         .select("*")
+        .eq("site_slug", siteSlug)
         .eq("code", cleanDiscountCode)
         .eq("is_active", true)
         .maybeSingle();
@@ -469,6 +488,7 @@ export async function POST(request: Request) {
     const { data: booking, error: bookingError } = await supabaseAdmin
       .from("bookings")
       .insert({
+        site_slug: siteSlug,
         client_id: client_id || null,
         crm_client_id: crmClientId,
         service_id: serviceId,
@@ -541,6 +561,7 @@ export async function POST(request: Request) {
         },
       ],
       metadata: {
+        siteSlug,
         bookingId: booking.id.toString(),
         crmClientId: crmClientId ? String(crmClientId) : "",
         serviceId: serviceId ? serviceId.toString() : "",
