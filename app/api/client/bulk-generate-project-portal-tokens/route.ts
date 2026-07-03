@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function createToken() {
@@ -16,7 +17,15 @@ function hasPortalToken(client: Record<string, unknown>) {
   );
 }
 
-async function updateClientToken(clientId: number, token: string) {
+async function updateClientToken({
+  clientId,
+  token,
+  siteSlug,
+}: {
+  clientId: number;
+  token: string;
+  siteSlug: string;
+}) {
   const richUpdate = {
     project_portal_token: token,
     portal_token: token,
@@ -28,6 +37,7 @@ async function updateClientToken(clientId: number, token: string) {
   const { error } = await supabaseAdmin
     .from("crm_clients")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", clientId);
 
   if (!error) {
@@ -46,6 +56,7 @@ async function updateClientToken(clientId: number, token: string) {
       .update({
         [column]: token,
       })
+      .eq("site_slug", siteSlug)
       .eq("id", clientId);
 
     if (!fallbackError) {
@@ -64,9 +75,12 @@ export async function POST(request: Request) {
   }
 
   try {
+    const siteSlug = getServerSiteSlug();
+
     const { data: clients, error } = await supabaseAdmin
       .from("crm_clients")
       .select("*")
+      .eq("site_slug", siteSlug)
       .order("created_at", {
         ascending: false,
       })
@@ -87,7 +101,11 @@ export async function POST(request: Request) {
       }
 
       const token = createToken();
-      const updated = await updateClientToken(Number(client.id), token);
+      const updated = await updateClientToken({
+        clientId: Number(client.id),
+        token,
+        siteSlug,
+      });
 
       if (updated) {
         generatedCount += 1;

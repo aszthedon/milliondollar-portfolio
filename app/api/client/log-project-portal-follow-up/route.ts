@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getClientId(body: Record<string, unknown>) {
@@ -32,9 +33,11 @@ async function insertFollowUpLog(payload: Record<string, unknown>) {
 async function updateClientFallback({
   clientId,
   note,
+  siteSlug,
 }: {
   clientId: number | null;
   note: string;
+  siteSlug: string;
 }) {
   if (!clientId) {
     return;
@@ -47,15 +50,18 @@ async function updateClientFallback({
       latest_project_portal_follow_up_note: note,
       updated_at: new Date().toISOString(),
     })
+    .eq("site_slug", siteSlug)
     .eq("id", clientId);
 }
 
 async function updateProjectFallback({
   projectId,
   note,
+  siteSlug,
 }: {
   projectId: number | null;
   note: string;
+  siteSlug: string;
 }) {
   if (!projectId) {
     return;
@@ -68,6 +74,7 @@ async function updateProjectFallback({
       latest_project_portal_follow_up_note: note,
       updated_at: new Date().toISOString(),
     })
+    .eq("site_slug", siteSlug)
     .eq("id", projectId);
 }
 
@@ -80,6 +87,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const clientId = getClientId(body);
     const projectId = getProjectId(body);
@@ -99,6 +107,7 @@ export async function POST(request: Request) {
     }
 
     const payload = {
+      site_slug: siteSlug,
       client_id: clientId,
       project_id: projectId,
       follow_up_type: String(body.follow_up_type ?? "manual").trim(),
@@ -113,11 +122,13 @@ export async function POST(request: Request) {
     await updateClientFallback({
       clientId,
       note,
+      siteSlug,
     }).catch(() => null);
 
     await updateProjectFallback({
       projectId,
       note,
+      siteSlug,
     }).catch(() => null);
 
     return NextResponse.json({

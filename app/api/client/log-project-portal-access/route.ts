@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getClientIpAddress(request: Request) {
@@ -21,14 +22,17 @@ async function safeMaybeSingle({
   table,
   column,
   value,
+  siteSlug,
 }: {
   table: string;
   column: string;
   value: string | number;
+  siteSlug: string;
 }) {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")
+    .eq("site_slug", siteSlug)
     .eq(column, value)
     .limit(1)
     .maybeSingle();
@@ -40,7 +44,7 @@ async function safeMaybeSingle({
   return data;
 }
 
-async function findPortalRecord(token: string) {
+async function findPortalRecord(token: string, siteSlug: string) {
   const tokenColumns = [
     "project_portal_token",
     "portal_token",
@@ -52,6 +56,7 @@ async function findPortalRecord(token: string) {
       table: "crm_clients",
       column,
       value: token,
+      siteSlug,
     });
 
     if (client) {
@@ -67,6 +72,7 @@ async function findPortalRecord(token: string) {
       table: "media_projects",
       column,
       value: token,
+      siteSlug,
     });
 
     if (project) {
@@ -86,6 +92,7 @@ async function findPortalRecord(token: string) {
 export async function POST(request: Request) {
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const token = String(body.token ?? "").trim();
 
     if (!token) {
@@ -99,10 +106,11 @@ export async function POST(request: Request) {
       );
     }
 
-    const { client, project } = await findPortalRecord(token);
+    const { client, project } = await findPortalRecord(token, siteSlug);
     const accessedAt = new Date().toISOString();
 
     const accessPayload = {
+      site_slug: siteSlug,
       token,
       client_id: client?.id ?? project?.client_id ?? null,
       project_id: project?.id ?? null,
@@ -127,6 +135,7 @@ export async function POST(request: Request) {
                 latest_project_portal_access_at: accessedAt,
                 updated_at: accessedAt,
               })
+              .eq("site_slug", siteSlug)
               .eq("id", client.id)
           : Promise.resolve(null),
         project?.id
@@ -136,6 +145,7 @@ export async function POST(request: Request) {
                 latest_project_portal_access_at: accessedAt,
                 updated_at: accessedAt,
               })
+              .eq("site_slug", siteSlug)
               .eq("id", project.id)
           : Promise.resolve(null),
       ]).catch(() => null);

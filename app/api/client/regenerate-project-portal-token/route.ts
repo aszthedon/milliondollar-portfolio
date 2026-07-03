@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function createToken() {
@@ -12,7 +13,15 @@ function getClientId(body: Record<string, unknown>) {
   return Number(body.client_id ?? body.clientId ?? body.id);
 }
 
-async function updateClientToken(clientId: number, token: string) {
+async function updateClientToken({
+  clientId,
+  token,
+  siteSlug,
+}: {
+  clientId: number;
+  token: string;
+  siteSlug: string;
+}) {
   const richUpdate = {
     project_portal_token: token,
     portal_token: token,
@@ -24,6 +33,7 @@ async function updateClientToken(clientId: number, token: string) {
   const { data, error } = await supabaseAdmin
     .from("crm_clients")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", clientId)
     .select("*")
     .maybeSingle();
@@ -44,6 +54,7 @@ async function updateClientToken(clientId: number, token: string) {
       .update({
         [column]: token,
       })
+      .eq("site_slug", siteSlug)
       .eq("id", clientId)
       .select("*")
       .maybeSingle();
@@ -65,6 +76,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const clientId = getClientId(body);
 
     if (!Number.isFinite(clientId)) {
@@ -81,6 +93,7 @@ export async function POST(request: Request) {
     const { data: existingClient, error: existingError } = await supabaseAdmin
       .from("crm_clients")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", clientId)
       .maybeSingle();
 
@@ -91,7 +104,7 @@ export async function POST(request: Request) {
     if (!existingClient) {
       return NextResponse.json(
         {
-          error: "Client was not found.",
+          error: "Client was not found for this site.",
         },
         {
           status: 404,
@@ -100,7 +113,11 @@ export async function POST(request: Request) {
     }
 
     const token = createToken();
-    const client = await updateClientToken(clientId, token);
+    const client = await updateClientToken({
+      clientId,
+      token,
+      siteSlug,
+    });
 
     return NextResponse.json({
       client,
