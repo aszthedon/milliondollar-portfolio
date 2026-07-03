@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function safeNumber(value: string | null, fallback: number) {
@@ -22,6 +23,7 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const siteSlug = getServerSiteSlug();
 
     const limit = Math.min(
       Math.max(safeNumber(url.searchParams.get("limit"), 25), 1),
@@ -41,6 +43,7 @@ export async function GET(request: Request) {
       .select("*", {
         count: "exact",
       })
+      .eq("site_slug", siteSlug)
       .order("created_at", {
         ascending: false,
       });
@@ -77,6 +80,7 @@ export async function GET(request: Request) {
       has_more: offset + limit < (count ?? 0),
       next_offset: offset + limit,
       summary: {
+        site_slug: siteSlug,
         loaded_count: snapshots.length,
         total_count: count ?? 0,
         latest_snapshot_at: snapshots[0]?.created_at ?? null,
@@ -118,12 +122,14 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const healthStatus = String(
       body.health_status ?? body.status ?? "healthy"
     ).trim();
 
     const insertPayload = {
+      site_slug: siteSlug,
       snapshot_type: String(body.snapshot_type ?? "manual").trim(),
       health_status: healthStatus,
       status: healthStatus,
