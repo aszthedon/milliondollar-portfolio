@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
 import { getDashboardAuthHeaders } from "@/lib/security/dashboardClientAuth";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 type BookingRow = Record<string, any>;
@@ -54,6 +55,8 @@ function getBookingTime(booking: BookingRow) {
 }
 
 export default function DashboardBookingsPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [bookings, setBookings] = useState<BookingRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
@@ -78,6 +81,7 @@ export default function DashboardBookingsPage() {
       const { data, error: bookingsError } = await supabase
         .from("bookings")
         .select("*")
+        .eq("site_slug", siteSlug)
         .order("created_at", {
           ascending: false,
         })
@@ -405,11 +409,11 @@ export default function DashboardBookingsPage() {
                           {getBookingDate(booking)} {getBookingTime(booking)}
                         </p>
                         <p>
-                          Paid:{" "}
+                          Paid: {" "}
                           {formatMoney(
                             booking.amount_paid || booking.amount_due_now
                           )}{" "}
-                          · Balance:{" "}
+                          · Balance: {" "}
                           {formatMoney(
                             booking.remaining_balance || booking.balance_due
                           )}
