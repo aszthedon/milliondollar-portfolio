@@ -1,3 +1,4 @@
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function logCronRun({
@@ -6,17 +7,20 @@ export async function logCronRun({
   status,
   message,
   resultSummary = {},
+  siteSlug = getServerSiteSlug(),
 }: {
   cronName: string;
   triggerSource?: string;
   status: "success" | "error" | "warning" | "skipped";
   message: string;
   resultSummary?: Record<string, unknown>;
+  siteSlug?: string;
 }) {
   try {
     const { data, error } = await supabaseAdmin
       .from("cron_run_logs")
       .insert({
+        site_slug: siteSlug,
         cron_name: cronName,
         trigger_source: triggerSource,
         status,
