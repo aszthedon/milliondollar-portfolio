@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getContractId(body: Record<string, unknown>) {
@@ -38,13 +39,22 @@ function getClientEmail(contract: Record<string, unknown>) {
   ).trim();
 }
 
-async function updateContractProjectId(contractId: number, projectId: number) {
+async function updateContractProjectId({
+  contractId,
+  projectId,
+  siteSlug,
+}: {
+  contractId: number;
+  projectId: number;
+  siteSlug: string;
+}) {
   await supabaseAdmin
     .from("client_contracts")
     .update({
       project_id: projectId,
       updated_at: new Date().toISOString(),
     })
+    .eq("site_slug", siteSlug)
     .eq("id", contractId);
 }
 
@@ -57,6 +67,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const contractId = getContractId(body);
 
     if (!Number.isFinite(contractId)) {
@@ -73,6 +84,7 @@ export async function POST(request: Request) {
     const { data: contract, error: contractError } = await supabaseAdmin
       .from("client_contracts")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", contractId)
       .maybeSingle();
 
@@ -83,7 +95,7 @@ export async function POST(request: Request) {
     if (!contract) {
       return NextResponse.json(
         {
-          error: "Contract was not found.",
+          error: "Contract was not found for this site.",
         },
         {
           status: 404,
@@ -94,6 +106,7 @@ export async function POST(request: Request) {
     const portalToken = crypto.randomBytes(32).toString("hex");
 
     const insertPayload = {
+      site_slug: siteSlug,
       project_title: getProjectTitle(contract),
       title: getProjectTitle(contract),
       client_id: contract.client_id ?? null,
@@ -119,7 +132,11 @@ export async function POST(request: Request) {
       throw projectError;
     }
 
-    await updateContractProjectId(contractId, project.id).catch(() => null);
+    await updateContractProjectId({
+      contractId,
+      projectId: project.id,
+      siteSlug,
+    }).catch(() => null);
 
     return NextResponse.json({
       project,

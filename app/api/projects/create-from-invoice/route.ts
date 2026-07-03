@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getInvoiceId(body: Record<string, unknown>) {
@@ -38,13 +39,22 @@ function getClientEmail(invoice: Record<string, unknown>) {
   ).trim();
 }
 
-async function updateInvoiceProjectId(invoiceId: number, projectId: number) {
+async function updateInvoiceProjectId({
+  invoiceId,
+  projectId,
+  siteSlug,
+}: {
+  invoiceId: number;
+  projectId: number;
+  siteSlug: string;
+}) {
   await supabaseAdmin
     .from("admin_invoices")
     .update({
       project_id: projectId,
       updated_at: new Date().toISOString(),
     })
+    .eq("site_slug", siteSlug)
     .eq("id", invoiceId);
 }
 
@@ -57,6 +67,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const invoiceId = getInvoiceId(body);
 
     if (!Number.isFinite(invoiceId)) {
@@ -73,6 +84,7 @@ export async function POST(request: Request) {
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("admin_invoices")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", invoiceId)
       .maybeSingle();
 
@@ -83,7 +95,7 @@ export async function POST(request: Request) {
     if (!invoice) {
       return NextResponse.json(
         {
-          error: "Invoice was not found.",
+          error: "Invoice was not found for this site.",
         },
         {
           status: 404,
@@ -94,6 +106,7 @@ export async function POST(request: Request) {
     const portalToken = crypto.randomBytes(32).toString("hex");
 
     const insertPayload = {
+      site_slug: siteSlug,
       project_title: getProjectTitle(invoice),
       title: getProjectTitle(invoice),
       client_id: invoice.client_id ?? null,
@@ -119,7 +132,11 @@ export async function POST(request: Request) {
       throw projectError;
     }
 
-    await updateInvoiceProjectId(invoiceId, project.id).catch(() => null);
+    await updateInvoiceProjectId({
+      invoiceId,
+      projectId: project.id,
+      siteSlug,
+    }).catch(() => null);
 
     return NextResponse.json({
       project,
