@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getBookingId(body: Record<string, unknown>) {
@@ -10,9 +11,11 @@ function getBookingId(body: Record<string, unknown>) {
 async function updateBookingWithFallback({
   bookingId,
   reason,
+  siteSlug,
 }: {
   bookingId: number;
   reason: string;
+  siteSlug: string;
 }) {
   const richUpdate = {
     status: "cancelled",
@@ -25,6 +28,7 @@ async function updateBookingWithFallback({
   const { data, error } = await supabaseAdmin
     .from("bookings")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId)
     .select("*")
     .maybeSingle();
@@ -38,6 +42,7 @@ async function updateBookingWithFallback({
     .update({
       status: "cancelled",
     })
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId)
     .select("*")
     .maybeSingle();
@@ -58,6 +63,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const bookingId = getBookingId(body);
     const reason = String(body.reason ?? "Cancelled from dashboard.").trim();
@@ -76,6 +82,7 @@ export async function POST(request: Request) {
     const { data: existingBooking, error: existingError } = await supabaseAdmin
       .from("bookings")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -86,7 +93,7 @@ export async function POST(request: Request) {
     if (!existingBooking) {
       return NextResponse.json(
         {
-          error: "Booking was not found.",
+          error: "Booking was not found for this site.",
         },
         {
           status: 404,
@@ -97,6 +104,7 @@ export async function POST(request: Request) {
     const booking = await updateBookingWithFallback({
       bookingId,
       reason,
+      siteSlug,
     });
 
     return NextResponse.json({
