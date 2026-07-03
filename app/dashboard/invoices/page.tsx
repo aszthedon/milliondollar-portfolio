@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
 import { getDashboardAuthHeaders } from "@/lib/security/dashboardClientAuth";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 type InvoiceRow = Record<string, any>;
@@ -24,6 +25,8 @@ function getInvoiceClient(invoice: InvoiceRow) {
 }
 
 export default function DashboardInvoicesPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [invoices, setInvoices] = useState<InvoiceRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
@@ -40,6 +43,7 @@ export default function DashboardInvoicesPage() {
       const { data, error: invoicesError } = await supabase
         .from("admin_invoices")
         .select("*")
+        .eq("site_slug", siteSlug)
         .order("created_at", {
           ascending: false,
         })
@@ -273,17 +277,17 @@ export default function DashboardInvoicesPage() {
                       <div className="mt-2 grid gap-1 text-sm text-zinc-400">
                         <p>{getInvoiceClient(invoice)}</p>
                         <p>
-                          Total:{" "}
+                          Total: {" "}
                           {money(
                             invoice.total_amount ||
                               invoice.amount ||
                               invoice.price
                           )}{" "}
-                          · Paid: {money(invoice.amount_paid)} · Balance:{" "}
+                          · Paid: {money(invoice.amount_paid)} · Balance: {" "}
                           {money(invoice.balance_due)}
                         </p>
                         <p>
-                          Due:{" "}
+                          Due: {" "}
                           {invoice.due_date ||
                             invoice.invoice_due_date ||
                             "No due date"}
