@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { logCronRun } from "@/lib/logCronRun";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function isAuthorizedCronRequest(request: Request) {
@@ -54,7 +55,10 @@ function getClientEmail(project: Record<string, unknown>) {
   ).trim();
 }
 
-async function insertFollowUp(project: Record<string, unknown>) {
+async function insertFollowUp(
+  project: Record<string, unknown>,
+  siteSlug: string
+) {
   const note = `Automatic project portal follow-up queued for ${
     project.project_title || project.title || `Project #${project.id}`
   }.`;
@@ -62,12 +66,14 @@ async function insertFollowUp(project: Record<string, unknown>) {
   const { data, error } = await supabaseAdmin
     .from("project_portal_follow_ups")
     .insert({
+      site_slug: siteSlug,
       project_id: project.id ?? null,
       client_id: project.client_id ?? null,
       follow_up_type: "automatic",
       follow_up_status: getClientEmail(project) ? "queued" : "missing_email",
       note,
       metadata: {
+        site_slug: siteSlug,
         project_title: project.project_title || project.title || null,
         client_email: getClientEmail(project) || null,
       },
@@ -83,13 +89,14 @@ async function insertFollowUp(project: Record<string, unknown>) {
   return data;
 }
 
-async function updateProjectFollowUp(projectId: number) {
+async function updateProjectFollowUp(projectId: number, siteSlug: string) {
   await supabaseAdmin
     .from("media_projects")
     .update({
       latest_project_portal_follow_up_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
     })
+    .eq("site_slug", siteSlug)
     .eq("id", projectId);
 }
 
@@ -106,6 +113,7 @@ export async function GET(request: Request) {
   }
 
   const triggerSource = getCronTriggerSource(request);
+  const siteSlug = getServerSiteSlug();
 
   try {
     const url = new URL(request.url);
@@ -119,6 +127,7 @@ export async function GET(request: Request) {
     const { data: projects, error } = await supabaseAdmin
       .from("media_projects")
       .select("*")
+      .eq("site_slug", siteSlug)
       .in("project_status", ["active", "in_progress", "review"])
       .lt("updated_at", cutoffDate)
       .order("updated_at", {
@@ -130,6 +139,7 @@ export async function GET(request: Request) {
       const fallback = await supabaseAdmin
         .from("media_projects")
         .select("*")
+        .eq("site_slug", siteSlug)
         .order("created_at", {
           ascending: true,
         })
@@ -146,7 +156,9 @@ export async function GET(request: Request) {
         triggerSource,
         status: "success",
         message: "Project portal follow-up scan completed with fallback query.",
+        siteSlug,
         resultSummary: {
+          site_slug: siteSlug,
           scanned_count: fallbackProjects.length,
           queued_count: 0,
           fallback: true,
@@ -154,6 +166,7 @@ export async function GET(request: Request) {
       });
 
       return NextResponse.json({
+        site_slug: siteSlug,
         checked_at: new Date().toISOString(),
         scanned_count: fallbackProjects.length,
         queued_count: 0,
@@ -165,14 +178,14 @@ export async function GET(request: Request) {
     let queuedCount = 0;
 
     for (const project of staleProjects) {
-      const followUp = await insertFollowUp(project);
+      const followUp = await insertFollowUp(project, siteSlug);
 
       if (followUp) {
         queuedCount += 1;
       }
 
       if (project.id) {
-        await updateProjectFollowUp(Number(project.id)).catch(() => null);
+        await updateProjectFollowUp(Number(project.id), siteSlug).catch(() => null);
       }
     }
 
@@ -183,7 +196,9 @@ export async function GET(request: Request) {
       message: `${queuedCount} project portal follow-up${
         queuedCount === 1 ? "" : "s"
       } queued.`,
+      siteSlug,
       resultSummary: {
+        site_slug: siteSlug,
         scanned_count: staleProjects.length,
         queued_count: queuedCount,
         cutoff_date: cutoffDate,
@@ -191,6 +206,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
+      site_slug: siteSlug,
       checked_at: new Date().toISOString(),
       cutoff_date: cutoffDate,
       scanned_count: staleProjects.length,
@@ -210,7 +226,10 @@ export async function GET(request: Request) {
         error instanceof Error
           ? error.message
           : "Unexpected project portal follow-up cron error.",
-      resultSummary: {},
+      siteSlug,
+      resultSummary: {
+        site_slug: siteSlug,
+      },
     });
 
     return NextResponse.json(
