@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getStripe() {
@@ -71,10 +72,12 @@ async function updateInvoiceAfterCheckout({
   invoiceId,
   sessionId,
   url,
+  siteSlug,
 }: {
   invoiceId: number;
   sessionId: string;
   url: string | null;
+  siteSlug: string;
 }) {
   const richUpdate = {
     stripe_checkout_session_id: sessionId,
@@ -87,6 +90,7 @@ async function updateInvoiceAfterCheckout({
   const { error } = await supabaseAdmin
     .from("admin_invoices")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", invoiceId);
 
   if (!error) {
@@ -98,6 +102,7 @@ async function updateInvoiceAfterCheckout({
     .update({
       stripe_session_id: sessionId,
     })
+    .eq("site_slug", siteSlug)
     .eq("id", invoiceId);
 }
 
@@ -110,6 +115,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const invoiceId = getInvoiceId(body);
 
     if (!Number.isFinite(invoiceId)) {
@@ -126,6 +132,7 @@ export async function POST(request: Request) {
     const { data: invoice, error: invoiceError } = await supabaseAdmin
       .from("admin_invoices")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", invoiceId)
       .maybeSingle();
 
@@ -136,7 +143,7 @@ export async function POST(request: Request) {
     if (!invoice) {
       return NextResponse.json(
         {
-          error: "Invoice was not found.",
+          error: "Invoice was not found for this site.",
         },
         {
           status: 404,
@@ -180,11 +187,13 @@ export async function POST(request: Request) {
       success_url: `${siteUrl}/invoice-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/dashboard/invoices`,
       metadata: {
+        siteSlug,
         type: "invoice_payment",
         invoice_id: String(invoiceId),
       },
       payment_intent_data: {
         metadata: {
+          siteSlug,
           type: "invoice_payment",
           invoice_id: String(invoiceId),
         },
@@ -195,6 +204,7 @@ export async function POST(request: Request) {
       invoiceId,
       sessionId: session.id,
       url: session.url,
+      siteSlug,
     });
 
     return NextResponse.json({
