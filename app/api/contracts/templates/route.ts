@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getTemplateName(body: Record<string, unknown>) {
@@ -11,18 +12,16 @@ function getTemplateName(body: Record<string, unknown>) {
 
 function getTemplateContent(body: Record<string, unknown>) {
   return String(
-    body.contract_body ||
-      body.content ||
-      body.body ||
-      body.template_body ||
-      ""
+    body.contract_body || body.content || body.body || body.template_body || ""
   ).trim();
 }
 
 async function insertTemplateWithFallback({
+  siteSlug,
   templateName,
   templateContent,
 }: {
+  siteSlug: string;
   templateName: string;
   templateContent: string;
 }) {
@@ -30,6 +29,7 @@ async function insertTemplateWithFallback({
 
   const attempts: Record<string, unknown>[] = [
     {
+      site_slug: siteSlug,
       template_name: templateName,
       title: templateName,
       contract_body: templateContent,
@@ -40,6 +40,7 @@ async function insertTemplateWithFallback({
       updated_at: now,
     },
     {
+      site_slug: siteSlug,
       template_name: templateName,
       title: templateName,
       contract_body: templateContent,
@@ -48,11 +49,13 @@ async function insertTemplateWithFallback({
       updated_at: now,
     },
     {
+      site_slug: siteSlug,
       template_name: templateName,
       title: templateName,
       content: templateContent,
     },
     {
+      site_slug: siteSlug,
       title: templateName,
       content: templateContent,
     },
@@ -85,9 +88,12 @@ export async function GET(request: Request) {
   }
 
   try {
+    const siteSlug = getServerSiteSlug();
+
     const { data, error } = await supabaseAdmin
       .from("contract_templates")
       .select("*")
+      .eq("site_slug", siteSlug)
       .order("created_at", {
         ascending: false,
       })
@@ -124,6 +130,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const templateName = getTemplateName(body);
     const templateContent = getTemplateContent(body);
@@ -151,6 +158,7 @@ export async function POST(request: Request) {
     }
 
     const template = await insertTemplateWithFallback({
+      siteSlug,
       templateName,
       templateContent,
     });
