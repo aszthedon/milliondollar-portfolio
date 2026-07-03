@@ -1,610 +1,435 @@
 "use client";
 
-import {
-  useEffect,
-  useState,
-} from "react";
+import { useEffect, useState } from "react";
 
-import Link from "next/link";
+import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
+import { getDashboardAuthHeaders } from "@/lib/security/dashboardClientAuth";
 
-import { supabase } from "@/lib/supabase";
+type FormState = {
+  siteName: string;
+  logoUrl: string;
+  faviconUrl: string;
+  primaryColor: string;
+  secondaryColor: string;
+  accentColor: string;
+  backgroundColor: string;
+  foregroundColor: string;
+  themeMode: string;
+  themeStyle: string;
+  themeRadius: string;
+  heroHeading: string;
+  heroDescription: string;
+  headerCtaLabel: string;
+  headerCtaHref: string;
+  ctaHeading: string;
+  ctaDescription: string;
+  ctaPrimaryLabel: string;
+  ctaPrimaryHref: string;
+  ctaSecondaryLabel: string;
+  ctaSecondaryHref: string;
+  contactHeading: string;
+  contactDescription: string;
+  contactButtonLabel: string;
+  footerDescription: string;
+  footerEmail: string;
+  footerPhone: string;
+  footerAddress: string;
+  footerInstagramUrl: string;
+  footerFacebookUrl: string;
+  footerTiktokUrl: string;
+  footerYoutubeUrl: string;
+  seoTitle: string;
+  seoDescription: string;
+  seoKeywords: string;
+  seoOgImageUrl: string;
+  showCtaSection: boolean;
+  showContactSection: boolean;
+  showFooter: boolean;
+  showDashboardButton: boolean;
+  showClientPortalButton: boolean;
+};
 
-interface SiteSettings {
-  id: number;
-  business_name: string | null;
-  phone: string | null;
-  email: string | null;
-  address: string | null;
-  hero_heading: string | null;
-  hero_description: string | null;
-  navbar_brand_text: string | null;
-  header_cta_label: string | null;
-  header_cta_href: string | null;
-  show_dashboard_button: boolean | null;
-  show_client_portal_button: boolean | null;
+const defaultForm: FormState = {
+  siteName: "",
+  logoUrl: "",
+  faviconUrl: "",
+  primaryColor: "#ffffff",
+  secondaryColor: "#a1a1aa",
+  accentColor: "#3b82f6",
+  backgroundColor: "#000000",
+  foregroundColor: "#ffffff",
+  themeMode: "dark",
+  themeStyle: "premium",
+  themeRadius: "rounded",
+  heroHeading: "",
+  heroDescription: "",
+  headerCtaLabel: "Book Now",
+  headerCtaHref: "#booking",
+  ctaHeading: "",
+  ctaDescription: "",
+  ctaPrimaryLabel: "Book Now",
+  ctaPrimaryHref: "#booking",
+  ctaSecondaryLabel: "View Work",
+  ctaSecondaryHref: "#gallery",
+  contactHeading: "Contact Us",
+  contactDescription: "",
+  contactButtonLabel: "Send Message",
+  footerDescription: "",
+  footerEmail: "",
+  footerPhone: "",
+  footerAddress: "",
+  footerInstagramUrl: "",
+  footerFacebookUrl: "",
+  footerTiktokUrl: "",
+  footerYoutubeUrl: "",
+  seoTitle: "",
+  seoDescription: "",
+  seoKeywords: "",
+  seoOgImageUrl: "",
+  showCtaSection: true,
+  showContactSection: true,
+  showFooter: true,
+  showDashboardButton: true,
+  showClientPortalButton: true,
+};
+
+function text(value: unknown) {
+  return String(value ?? "");
 }
 
-export default function SettingsPage() {
-  const [
-    settingsId,
-    setSettingsId,
-  ] = useState<number | null>(null);
+export default function DashboardSettingsPage() {
+  const [form, setForm] = useState<FormState>(defaultForm);
+  const [siteSlug, setSiteSlug] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [success, setSuccess] = useState("");
 
-  const [businessName, setBusinessName] =
-    useState("");
-
-  const [phone, setPhone] =
-    useState("");
-
-  const [email, setEmail] =
-    useState("");
-
-  const [address, setAddress] =
-    useState("");
-
-  const [heroHeading, setHeroHeading] =
-    useState("");
-
-  const [
-    heroDescription,
-    setHeroDescription,
-  ] = useState("");
-
-  const [
-    navbarBrandText,
-    setNavbarBrandText,
-  ] = useState("");
-
-  const [
-    headerCtaLabel,
-    setHeaderCtaLabel,
-  ] = useState("");
-
-  const [
-    headerCtaHref,
-    setHeaderCtaHref,
-  ] = useState("");
-
-  const [
-    showDashboardButton,
-    setShowDashboardButton,
-  ] = useState(true);
-
-  const [
-    showClientPortalButton,
-    setShowClientPortalButton,
-  ] = useState(false);
-
-  const [loading, setLoading] =
-    useState(true);
-
-  const [saving, setSaving] =
-    useState(false);
-
-  const [error, setError] =
-    useState("");
-
-  const [success, setSuccess] =
-    useState("");
-
-  function fillSettings(
-    settings: SiteSettings
-  ) {
-    setSettingsId(settings.id);
-
-    setBusinessName(
-      settings.business_name || ""
-    );
-
-    setPhone(settings.phone || "");
-    setEmail(settings.email || "");
-    setAddress(settings.address || "");
-
-    setHeroHeading(
-      settings.hero_heading || ""
-    );
-
-    setHeroDescription(
-      settings.hero_description || ""
-    );
-
-    setNavbarBrandText(
-      settings.navbar_brand_text ||
-        settings.business_name ||
-        "MDT Productions"
-    );
-
-    setHeaderCtaLabel(
-      settings.header_cta_label ||
-        "Book Now"
-    );
-
-    setHeaderCtaHref(
-      settings.header_cta_href ||
-        "/#booking"
-    );
-
-    setShowDashboardButton(
-      settings.show_dashboard_button ??
-        true
-    );
-
-    setShowClientPortalButton(
-      settings.show_client_portal_button ??
-        false
-    );
+  function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
+    setForm((current) => ({
+      ...current,
+      [key]: value,
+    }));
   }
 
-  async function fetchSettings() {
+  async function loadSettings() {
     try {
       setLoading(true);
       setError("");
 
-      const { data, error } =
-        await supabase
-          .from("site_settings")
-          .select("*")
-          .limit(1)
-          .maybeSingle();
+      const response = await fetch("/api/dashboard/site-branding", {
+        headers: getDashboardAuthHeaders(),
+      });
 
-      if (error) {
-        throw error;
+      const data = await response.json();
+
+      if (!response.ok) {
+        throw new Error(data.error ?? "Settings could not be loaded.");
       }
 
-      if (data) {
-        fillSettings(
-          data as SiteSettings
-        );
-      }
-    } catch (error) {
-      console.error(
-        "SETTINGS FETCH ERROR:",
-        error
-      );
+      const settings = data.settings ?? {};
+      const site = data.site ?? {};
+      const branding = settings.branding_settings ?? site.branding ?? {};
+      const theme = settings.theme_settings ?? site.theme ?? {};
 
-      setError(
-        "Site settings could not be loaded."
-      );
+      setSiteSlug(data.site_slug ?? "");
+      setForm({
+        ...defaultForm,
+        siteName: text(settings.business_name || site.name),
+        logoUrl: text(settings.logo_url || branding.logoUrl),
+        faviconUrl: text(settings.favicon_url || branding.faviconUrl),
+        primaryColor: text(settings.primary_color || branding.primaryColor || defaultForm.primaryColor),
+        secondaryColor: text(settings.secondary_color || branding.secondaryColor || defaultForm.secondaryColor),
+        accentColor: text(branding.accentColor || defaultForm.accentColor),
+        backgroundColor: text(branding.backgroundColor || defaultForm.backgroundColor),
+        foregroundColor: text(branding.foregroundColor || defaultForm.foregroundColor),
+        themeMode: text(theme.mode || defaultForm.themeMode),
+        themeStyle: text(theme.style || defaultForm.themeStyle),
+        themeRadius: text(theme.radius || defaultForm.themeRadius),
+        heroHeading: text(settings.hero_heading),
+        heroDescription: text(settings.hero_description),
+        headerCtaLabel: text(settings.header_cta_label || defaultForm.headerCtaLabel),
+        headerCtaHref: text(settings.header_cta_href || defaultForm.headerCtaHref),
+        ctaHeading: text(settings.cta_heading),
+        ctaDescription: text(settings.cta_description),
+        ctaPrimaryLabel: text(settings.cta_primary_label || defaultForm.ctaPrimaryLabel),
+        ctaPrimaryHref: text(settings.cta_primary_href || defaultForm.ctaPrimaryHref),
+        ctaSecondaryLabel: text(settings.cta_secondary_label || defaultForm.ctaSecondaryLabel),
+        ctaSecondaryHref: text(settings.cta_secondary_href || defaultForm.ctaSecondaryHref),
+        contactHeading: text(settings.contact_heading || defaultForm.contactHeading),
+        contactDescription: text(settings.contact_description),
+        contactButtonLabel: text(settings.contact_button_label || defaultForm.contactButtonLabel),
+        footerDescription: text(settings.footer_description),
+        footerEmail: text(settings.footer_email),
+        footerPhone: text(settings.footer_phone),
+        footerAddress: text(settings.footer_address),
+        footerInstagramUrl: text(settings.footer_instagram_url),
+        footerFacebookUrl: text(settings.footer_facebook_url),
+        footerTiktokUrl: text(settings.footer_tiktok_url),
+        footerYoutubeUrl: text(settings.footer_youtube_url),
+        seoTitle: text(settings.seo_title || site.name),
+        seoDescription: text(settings.seo_description),
+        seoKeywords: text(settings.seo_keywords),
+        seoOgImageUrl: text(settings.seo_og_image_url),
+        showCtaSection: settings.show_cta_section ?? defaultForm.showCtaSection,
+        showContactSection: settings.show_contact_section ?? defaultForm.showContactSection,
+        showFooter: settings.show_footer ?? defaultForm.showFooter,
+        showDashboardButton: settings.show_dashboard_button ?? defaultForm.showDashboardButton,
+        showClientPortalButton: settings.show_client_portal_button ?? defaultForm.showClientPortalButton,
+      });
+    } catch (loadError) {
+      setError(loadError instanceof Error ? loadError.message : "Settings could not be loaded.");
     } finally {
       setLoading(false);
     }
   }
 
-  useEffect(() => {
-    fetchSettings();
-  }, []);
-
-  async function updateSettings() {
+  async function saveSettings() {
     try {
       setSaving(true);
       setError("");
       setSuccess("");
 
-      const payload = {
-        business_name:
-          businessName.trim(),
+      const response = await fetch("/api/dashboard/site-branding", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          ...getDashboardAuthHeaders(),
+        },
+        body: JSON.stringify({
+          branding: {
+            logoUrl: form.logoUrl,
+            faviconUrl: form.faviconUrl,
+            primaryColor: form.primaryColor,
+            secondaryColor: form.secondaryColor,
+            accentColor: form.accentColor,
+            backgroundColor: form.backgroundColor,
+            foregroundColor: form.foregroundColor,
+          },
+          theme: {
+            mode: form.themeMode,
+            style: form.themeStyle,
+            radius: form.themeRadius,
+          },
+          content: {
+            siteName: form.siteName,
+            heroHeading: form.heroHeading,
+            heroDescription: form.heroDescription,
+            headerCtaLabel: form.headerCtaLabel,
+            headerCtaHref: form.headerCtaHref,
+            ctaHeading: form.ctaHeading,
+            ctaDescription: form.ctaDescription,
+            ctaPrimaryLabel: form.ctaPrimaryLabel,
+            ctaPrimaryHref: form.ctaPrimaryHref,
+            ctaSecondaryLabel: form.ctaSecondaryLabel,
+            ctaSecondaryHref: form.ctaSecondaryHref,
+            seoTitle: form.seoTitle,
+            seoDescription: form.seoDescription,
+            seoKeywords: form.seoKeywords,
+            seoOgImageUrl: form.seoOgImageUrl,
+            showCtaSection: form.showCtaSection,
+            showDashboardButton: form.showDashboardButton,
+            showClientPortalButton: form.showClientPortalButton,
+          },
+          contact: {
+            heading: form.contactHeading,
+            description: form.contactDescription,
+            buttonLabel: form.contactButtonLabel,
+            showSection: form.showContactSection,
+          },
+          footer: {
+            description: form.footerDescription,
+            email: form.footerEmail,
+            phone: form.footerPhone,
+            address: form.footerAddress,
+            instagramUrl: form.footerInstagramUrl,
+            facebookUrl: form.footerFacebookUrl,
+            tiktokUrl: form.footerTiktokUrl,
+            youtubeUrl: form.footerYoutubeUrl,
+            showFooter: form.showFooter,
+          },
+        }),
+      });
 
-        phone:
-          phone.trim(),
+      const data = await response.json();
 
-        email:
-          email.trim(),
-
-        address:
-          address.trim(),
-
-        hero_heading:
-          heroHeading.trim(),
-
-        hero_description:
-          heroDescription.trim(),
-
-        navbar_brand_text:
-          navbarBrandText.trim() ||
-          businessName.trim() ||
-          "MDT Productions",
-
-        header_cta_label:
-          headerCtaLabel.trim(),
-
-        header_cta_href:
-          headerCtaHref.trim(),
-
-        show_dashboard_button:
-          showDashboardButton,
-
-        show_client_portal_button:
-          showClientPortalButton,
-
-        updated_at:
-          new Date().toISOString(),
-      };
-
-      if (settingsId) {
-        const { error } =
-          await supabase
-            .from("site_settings")
-            .update(payload)
-            .eq("id", settingsId);
-
-        if (error) {
-          throw error;
-        }
-      } else {
-        const { data, error } =
-          await supabase
-            .from("site_settings")
-            .insert(payload)
-            .select("*")
-            .single();
-
-        if (error) {
-          throw error;
-        }
-
-        if (data) {
-          fillSettings(
-            data as SiteSettings
-          );
-        }
+      if (!response.ok) {
+        throw new Error(data.error ?? "Settings could not be saved.");
       }
 
-      setSuccess(
-        "Site settings updated."
-      );
-
-      await fetchSettings();
-    } catch (error) {
-      console.error(
-        "SETTINGS UPDATE ERROR:",
-        error
-      );
-
-      setError(
-        "Site settings could not be saved."
-      );
+      setSuccess(data.message ?? "Settings saved.");
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Settings could not be saved.");
     } finally {
       setSaving(false);
     }
   }
 
-  if (loading) {
-    return (
-      <main className="flex min-h-screen items-center justify-center bg-black px-6 text-white">
-        <div className="rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
-          <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
-            Loading
-          </p>
-
-          <h1 className="mt-4 text-3xl font-bold">
-            Loading Site Settings...
-          </h1>
-        </div>
-      </main>
-    );
-  }
+  useEffect(() => {
+    loadSettings();
+  }, []);
 
   return (
-    <main className="min-h-screen bg-black px-6 py-10 text-white md:px-10">
-      <div className="mb-10 flex flex-col gap-6 md:flex-row md:items-end md:justify-between">
-        <div>
-          <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-400">
-            Dashboard
-          </p>
-
-          <h1 className="text-5xl font-bold">
-            Site Settings
-          </h1>
-
-          <p className="mt-4 max-w-2xl text-zinc-400">
-            Edit brand information, hero text, and public website header
-            controls.
-          </p>
-        </div>
-
-        <div className="flex flex-wrap gap-3">
-          <Link
-            href="/dashboard"
-            className="rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white hover:text-black"
-          >
-            Dashboard Home
-          </Link>
-
-          <Link
-            href="/"
-            className="rounded-full bg-white px-5 py-3 text-sm font-medium text-black transition hover:bg-zinc-200"
-          >
-            View Website
-          </Link>
-        </div>
-      </div>
-
-      {error && (
-        <div className="mb-6 rounded-3xl border border-red-500 bg-red-500/10 p-5 text-red-300">
-          {error}
-        </div>
-      )}
-
-      {success && (
-        <div className="mb-6 rounded-3xl border border-green-500 bg-green-500/10 p-5 text-green-300">
-          {success}
-        </div>
-      )}
-
-      <div className="grid gap-8 xl:grid-cols-2">
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-8">
-          <p className="mb-3 text-sm uppercase tracking-[0.25em] text-zinc-500">
-            Brand Information
-          </p>
-
-          <h2 className="text-3xl font-bold">
-            Business Details
-          </h2>
-
-          <div className="mt-8 grid gap-5">
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Business Name
-              </span>
-
-              <input
-                placeholder="Million Dollar Ticket Productions"
-                value={businessName}
-                onChange={(event) =>
-                  setBusinessName(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Phone
-              </span>
-
-              <input
-                placeholder="(555) 555-5555"
-                value={phone}
-                onChange={(event) =>
-                  setPhone(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Email
-              </span>
-
-              <input
-                placeholder="hello@example.com"
-                value={email}
-                onChange={(event) =>
-                  setEmail(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Address
-              </span>
-
-              <input
-                placeholder="City, State"
-                value={address}
-                onChange={(event) =>
-                  setAddress(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-8">
-          <p className="mb-3 text-sm uppercase tracking-[0.25em] text-zinc-500">
-            Homepage
-          </p>
-
-          <h2 className="text-3xl font-bold">
-            Hero Content
-          </h2>
-
-          <div className="mt-8 grid gap-5">
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Hero Heading
-              </span>
-
-              <input
-                placeholder="Book your next service with ease"
-                value={heroHeading}
-                onChange={(event) =>
-                  setHeroHeading(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Hero Description
-              </span>
-
-              <textarea
-                placeholder="Describe the brand, services, or offer..."
-                value={heroDescription}
-                onChange={(event) =>
-                  setHeroDescription(
-                    event.target.value
-                  )
-                }
-                rows={8}
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
-          </div>
-        </section>
-
-        <section className="rounded-3xl border border-white/10 bg-white/5 p-8 xl:col-span-2">
-          <div className="flex flex-col gap-4 md:flex-row md:items-end md:justify-between">
+    <AdminUnlockGate title="Site Settings">
+      <main className="min-h-screen bg-black px-6 py-10 text-white">
+        <div className="mx-auto grid max-w-6xl gap-6">
+          <div className="flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
             <div>
-              <p className="mb-3 text-sm uppercase tracking-[0.25em] text-zinc-500">
-                Website Header
+              <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
+                Dashboard Settings {siteSlug ? `· ${siteSlug}` : ""}
               </p>
-
-              <h2 className="text-3xl font-bold">
-                Navbar Branding
-              </h2>
-
-              <p className="mt-3 max-w-2xl text-sm text-zinc-400">
-                These settings control the brand name and buttons shown in the
-                public website header. Menu links themselves are controlled on
-                the Navigation page.
+              <h1 className="mt-3 text-4xl font-black">No-Code Site Editor</h1>
+              <p className="mt-2 max-w-3xl text-sm text-zinc-400">
+                Update the site name, logo, colors, theme, homepage copy,
+                contact info, footer, and SEO without editing code.
               </p>
             </div>
 
-            <Link
-              href="/dashboard/navigation"
-              className="rounded-full border border-white/10 px-5 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white hover:text-black"
-            >
-              Edit Menu Links
-            </Link>
+            <div className="flex flex-wrap gap-2">
+              <button
+                type="button"
+                onClick={loadSettings}
+                disabled={loading || saving}
+                className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
+              >
+                Refresh
+              </button>
+              <button
+                type="button"
+                onClick={saveSettings}
+                disabled={loading || saving}
+                className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-60"
+              >
+                {saving ? "Saving..." : "Save Settings"}
+              </button>
+            </div>
           </div>
 
-          <div className="mt-8 grid gap-5 md:grid-cols-2">
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Navbar Brand Text
-              </span>
+          {error && (
+            <div className="rounded-2xl border border-red-500/30 bg-red-500/10 p-4 text-sm text-red-200">
+              {error}
+            </div>
+          )}
 
-              <input
-                placeholder="MDT Productions"
-                value={navbarBrandText}
-                onChange={(event) =>
-                  setNavbarBrandText(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
+          {success && (
+            <div className="rounded-2xl border border-green-500/30 bg-green-500/10 p-4 text-sm text-green-200">
+              {success}
+            </div>
+          )}
 
-            <label className="grid gap-2">
-              <span className="text-sm text-zinc-400">
-                Header CTA Label
-              </span>
+          {loading ? (
+            <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-zinc-400">
+              Loading settings...
+            </div>
+          ) : (
+            <div className="grid gap-6">
+              <Panel title="Brand Identity">
+                <Field label="Site Name" value={form.siteName} onChange={(value) => setField("siteName", value)} />
+                <Field label="Logo URL" value={form.logoUrl} onChange={(value) => setField("logoUrl", value)} />
+                <Field label="Favicon URL" value={form.faviconUrl} onChange={(value) => setField("faviconUrl", value)} />
+              </Panel>
 
-              <input
-                placeholder="Book Now"
-                value={headerCtaLabel}
-                onChange={(event) =>
-                  setHeaderCtaLabel(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
+              <Panel title="Colors & Theme">
+                <ColorField label="Primary Color" value={form.primaryColor} onChange={(value) => setField("primaryColor", value)} />
+                <ColorField label="Secondary Color" value={form.secondaryColor} onChange={(value) => setField("secondaryColor", value)} />
+                <ColorField label="Accent Color" value={form.accentColor} onChange={(value) => setField("accentColor", value)} />
+                <ColorField label="Background Color" value={form.backgroundColor} onChange={(value) => setField("backgroundColor", value)} />
+                <ColorField label="Text Color" value={form.foregroundColor} onChange={(value) => setField("foregroundColor", value)} />
+                <Field label="Theme Mode" value={form.themeMode} onChange={(value) => setField("themeMode", value)} />
+                <Field label="Theme Style" value={form.themeStyle} onChange={(value) => setField("themeStyle", value)} />
+                <Field label="Corner Radius" value={form.themeRadius} onChange={(value) => setField("themeRadius", value)} />
+              </Panel>
 
-            <label className="grid gap-2 md:col-span-2">
-              <span className="text-sm text-zinc-400">
-                Header CTA Link
-              </span>
+              <Panel title="Homepage Content">
+                <Field label="Hero Heading" value={form.heroHeading} onChange={(value) => setField("heroHeading", value)} />
+                <TextArea label="Hero Description" value={form.heroDescription} onChange={(value) => setField("heroDescription", value)} />
+                <Field label="Header Button Label" value={form.headerCtaLabel} onChange={(value) => setField("headerCtaLabel", value)} />
+                <Field label="Header Button Link" value={form.headerCtaHref} onChange={(value) => setField("headerCtaHref", value)} />
+                <Field label="CTA Heading" value={form.ctaHeading} onChange={(value) => setField("ctaHeading", value)} />
+                <TextArea label="CTA Description" value={form.ctaDescription} onChange={(value) => setField("ctaDescription", value)} />
+                <Field label="CTA Primary Label" value={form.ctaPrimaryLabel} onChange={(value) => setField("ctaPrimaryLabel", value)} />
+                <Field label="CTA Primary Link" value={form.ctaPrimaryHref} onChange={(value) => setField("ctaPrimaryHref", value)} />
+                <Field label="CTA Secondary Label" value={form.ctaSecondaryLabel} onChange={(value) => setField("ctaSecondaryLabel", value)} />
+                <Field label="CTA Secondary Link" value={form.ctaSecondaryHref} onChange={(value) => setField("ctaSecondaryHref", value)} />
+              </Panel>
 
-              <input
-                placeholder="/#booking or /client or https://example.com"
-                value={headerCtaHref}
-                onChange={(event) =>
-                  setHeaderCtaHref(
-                    event.target.value
-                  )
-                }
-                className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none transition focus:border-white/40"
-              />
-            </label>
+              <Panel title="Contact & Footer">
+                <Field label="Contact Heading" value={form.contactHeading} onChange={(value) => setField("contactHeading", value)} />
+                <TextArea label="Contact Description" value={form.contactDescription} onChange={(value) => setField("contactDescription", value)} />
+                <Field label="Contact Button Label" value={form.contactButtonLabel} onChange={(value) => setField("contactButtonLabel", value)} />
+                <TextArea label="Footer Description" value={form.footerDescription} onChange={(value) => setField("footerDescription", value)} />
+                <Field label="Footer Email" value={form.footerEmail} onChange={(value) => setField("footerEmail", value)} />
+                <Field label="Footer Phone" value={form.footerPhone} onChange={(value) => setField("footerPhone", value)} />
+                <Field label="Footer Address" value={form.footerAddress} onChange={(value) => setField("footerAddress", value)} />
+                <Field label="Instagram URL" value={form.footerInstagramUrl} onChange={(value) => setField("footerInstagramUrl", value)} />
+                <Field label="Facebook URL" value={form.footerFacebookUrl} onChange={(value) => setField("footerFacebookUrl", value)} />
+                <Field label="TikTok URL" value={form.footerTiktokUrl} onChange={(value) => setField("footerTiktokUrl", value)} />
+                <Field label="YouTube URL" value={form.footerYoutubeUrl} onChange={(value) => setField("footerYoutubeUrl", value)} />
+              </Panel>
 
-            <label className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black px-4 py-4">
-              <span>
-                <span className="block font-medium">
-                  Show Dashboard Button
-                </span>
+              <Panel title="SEO & Visibility">
+                <Field label="SEO Title" value={form.seoTitle} onChange={(value) => setField("seoTitle", value)} />
+                <TextArea label="SEO Description" value={form.seoDescription} onChange={(value) => setField("seoDescription", value)} />
+                <Field label="SEO Keywords" value={form.seoKeywords} onChange={(value) => setField("seoKeywords", value)} />
+                <Field label="Open Graph Image URL" value={form.seoOgImageUrl} onChange={(value) => setField("seoOgImageUrl", value)} />
+                <Toggle label="Show CTA Section" value={form.showCtaSection} onChange={(value) => setField("showCtaSection", value)} />
+                <Toggle label="Show Contact Section" value={form.showContactSection} onChange={(value) => setField("showContactSection", value)} />
+                <Toggle label="Show Footer" value={form.showFooter} onChange={(value) => setField("showFooter", value)} />
+                <Toggle label="Show Dashboard Button" value={form.showDashboardButton} onChange={(value) => setField("showDashboardButton", value)} />
+                <Toggle label="Show Client Portal Button" value={form.showClientPortalButton} onChange={(value) => setField("showClientPortalButton", value)} />
+              </Panel>
+            </div>
+          )}
+        </div>
+      </main>
+    </AdminUnlockGate>
+  );
+}
 
-                <span className="text-sm text-zinc-500">
-                  Useful while building. Hide for client-facing templates.
-                </span>
-              </span>
+function Panel({ title, children }: { title: string; children: React.ReactNode }) {
+  return (
+    <section className="rounded-3xl border border-white/10 bg-white/5 p-5">
+      <h2 className="text-xl font-black">{title}</h2>
+      <div className="mt-5 grid gap-4 md:grid-cols-2">{children}</div>
+    </section>
+  );
+}
 
-              <input
-                type="checkbox"
-                checked={showDashboardButton}
-                onChange={(event) =>
-                  setShowDashboardButton(
-                    event.target.checked
-                  )
-                }
-                className="h-5 w-5"
-              />
-            </label>
+function Field({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">{label}</span>
+      <input value={value} onChange={(event) => onChange(event.target.value)} className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none" />
+    </label>
+  );
+}
 
-            <label className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black px-4 py-4">
-              <span>
-                <span className="block font-medium">
-                  Show Client Portal Button
-                </span>
-
-                <span className="text-sm text-zinc-500">
-                  Shows a direct client portal button in the header.
-                </span>
-              </span>
-
-              <input
-                type="checkbox"
-                checked={showClientPortalButton}
-                onChange={(event) =>
-                  setShowClientPortalButton(
-                    event.target.checked
-                  )
-                }
-                className="h-5 w-5"
-              />
-            </label>
-          </div>
-        </section>
+function ColorField({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="grid gap-2">
+      <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">{label}</span>
+      <div className="grid grid-cols-[56px_1fr] gap-2">
+        <input type="color" value={value || "#ffffff"} onChange={(event) => onChange(event.target.value)} className="h-12 rounded-xl border border-white/10 bg-black" />
+        <input value={value} onChange={(event) => onChange(event.target.value)} className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none" />
       </div>
+    </label>
+  );
+}
 
-      <div className="mt-8 flex flex-wrap gap-4">
-        <button
-          onClick={updateSettings}
-          disabled={saving}
-          className="rounded-full bg-white px-8 py-3 font-medium text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {saving
-            ? "Saving..."
-            : "Save Settings"}
-        </button>
+function TextArea({ label, value, onChange }: { label: string; value: string; onChange: (value: string) => void }) {
+  return (
+    <label className="grid gap-2 md:col-span-2">
+      <span className="text-xs font-bold uppercase tracking-[0.2em] text-zinc-500">{label}</span>
+      <textarea value={value} onChange={(event) => onChange(event.target.value)} className="min-h-28 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none" />
+    </label>
+  );
+}
 
-        <button
-          onClick={fetchSettings}
-          disabled={saving}
-          className="rounded-full border border-white/10 px-8 py-3 font-medium text-zinc-300 transition hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          Reset Unsaved Changes
-        </button>
-      </div>
-    </main>
+function Toggle({ label, value, onChange }: { label: string; value: boolean; onChange: (value: boolean) => void }) {
+  return (
+    <label className="flex items-center justify-between gap-4 rounded-2xl border border-white/10 bg-black px-4 py-3">
+      <span className="text-sm font-bold text-white">{label}</span>
+      <input type="checkbox" checked={value} onChange={(event) => onChange(event.target.checked)} className="h-5 w-5" />
+    </label>
   );
 }
