@@ -107,7 +107,7 @@ async function upsertCrmClient(customerEmail: string, siteSlug: string) {
         last_contacted_at: new Date().toISOString(),
       },
       {
-        onConflict: "email",
+        onConflict: "site_slug,email",
       }
     )
     .select("id")
