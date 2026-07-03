@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 type ProjectRow = Record<string, any>;
@@ -17,6 +18,8 @@ function getProjectTitle(project: ProjectRow) {
 }
 
 export default function DashboardProjectsPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [projects, setProjects] = useState<ProjectRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
@@ -34,6 +37,7 @@ export default function DashboardProjectsPage() {
       const { data, error: projectsError } = await supabase
         .from("media_projects")
         .select("*")
+        .eq("site_slug", siteSlug)
         .order("created_at", {
           ascending: false,
         })
@@ -67,6 +71,7 @@ export default function DashboardProjectsPage() {
           project_status: status,
           updated_at: new Date().toISOString(),
         })
+        .eq("site_slug", siteSlug)
         .eq("id", project.id);
 
       if (updateError) {
@@ -243,13 +248,13 @@ export default function DashboardProjectsPage() {
                             "No client label"}
                         </p>
                         <p>
-                          Due:{" "}
+                          Due: {" "}
                           {project.due_date ||
                             project.deadline ||
                             "No due date"}
                         </p>
                         <p>
-                          Source:{" "}
+                          Source: {" "}
                           {project.source_type ||
                             project.created_from ||
                             "manual/unknown"}
