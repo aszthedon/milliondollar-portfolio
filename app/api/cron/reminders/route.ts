@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { logCronRun } from "@/lib/logCronRun";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function isAuthorizedCronRequest(request: Request) {
@@ -81,15 +82,18 @@ async function logEmailAudit({
   status,
   reason,
   metadata,
+  siteSlug,
 }: {
   recipient: string;
   subject: string;
   status: string;
   reason: string;
   metadata: Record<string, unknown>;
+  siteSlug: string;
 }) {
   try {
     await supabaseAdmin.from("email_audit_logs").insert({
+      site_slug: siteSlug,
       recipient_email: recipient,
       subject,
       status,
@@ -158,7 +162,7 @@ async function sendReminderEmail({
   };
 }
 
-async function updateBookingReminderStatus(bookingId: number) {
+async function updateBookingReminderStatus(bookingId: number, siteSlug: string) {
   const richUpdate = {
     latest_reminder_sent_at: new Date().toISOString(),
     reminder_status: "sent",
@@ -168,6 +172,7 @@ async function updateBookingReminderStatus(bookingId: number) {
   const { error } = await supabaseAdmin
     .from("bookings")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId);
 
   if (!error) {
@@ -179,6 +184,7 @@ async function updateBookingReminderStatus(bookingId: number) {
     .update({
       reminder_status: "sent",
     })
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId);
 }
 
@@ -195,6 +201,7 @@ export async function GET(request: Request) {
   }
 
   const triggerSource = getCronTriggerSource(request);
+  const siteSlug = getServerSiteSlug();
 
   try {
     const url = new URL(request.url);
@@ -211,6 +218,7 @@ export async function GET(request: Request) {
     const { data: bookings, error } = await supabaseAdmin
       .from("bookings")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("booking_date", targetDate)
       .not("status", "eq", "cancelled")
       .limit(250);
@@ -219,6 +227,7 @@ export async function GET(request: Request) {
       const fallback = await supabaseAdmin
         .from("bookings")
         .select("*")
+        .eq("site_slug", siteSlug)
         .eq("booking_date", targetDate)
         .limit(250);
 
@@ -233,7 +242,9 @@ export async function GET(request: Request) {
         triggerSource,
         status: "warning",
         message: "Reminder scan completed with fallback query.",
+        siteSlug,
         resultSummary: {
+          site_slug: siteSlug,
           target_date: targetDate,
           scanned_count: fallbackBookings.length,
           sent_count: 0,
@@ -243,6 +254,7 @@ export async function GET(request: Request) {
       });
 
       return NextResponse.json({
+        site_slug: siteSlug,
         checked_at: new Date().toISOString(),
         target_date: targetDate,
         scanned_count: fallbackBookings.length,
@@ -269,7 +281,9 @@ export async function GET(request: Request) {
           subject: "Booking reminder",
           status: "skipped",
           reason: "missing_recipient_email",
+          siteSlug,
           metadata: {
+            site_slug: siteSlug,
             booking_id: booking.id,
           },
         });
@@ -301,7 +315,9 @@ export async function GET(request: Request) {
         subject,
         status: result.sent ? "sent" : result.skipped ? "skipped" : "failed",
         reason: result.reason,
+        siteSlug,
         metadata: {
+          site_slug: siteSlug,
           booking_id: booking.id,
           result,
         },
@@ -311,7 +327,9 @@ export async function GET(request: Request) {
         sentCount += 1;
 
         if (booking.id) {
-          await updateBookingReminderStatus(Number(booking.id)).catch(() => null);
+          await updateBookingReminderStatus(Number(booking.id), siteSlug).catch(
+            () => null
+          );
         }
       } else if (result.skipped) {
         skippedCount += 1;
@@ -329,7 +347,9 @@ export async function GET(request: Request) {
       triggerSource,
       status: cronStatus,
       message,
+      siteSlug,
       resultSummary: {
+        site_slug: siteSlug,
         target_date: targetDate,
         scanned_count: reminderBookings.length,
         sent_count: sentCount,
@@ -339,6 +359,7 @@ export async function GET(request: Request) {
     });
 
     return NextResponse.json({
+      site_slug: siteSlug,
       checked_at: new Date().toISOString(),
       target_date: targetDate,
       scanned_count: reminderBookings.length,
@@ -358,7 +379,10 @@ export async function GET(request: Request) {
         error instanceof Error
           ? error.message
           : "Unexpected reminders cron error.",
-      resultSummary: {},
+      siteSlug,
+      resultSummary: {
+        site_slug: siteSlug,
+      },
     });
 
     return NextResponse.json(
