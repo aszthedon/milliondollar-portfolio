@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function createToken() {
@@ -12,14 +13,17 @@ async function safeMaybeSingle({
   table,
   column,
   value,
+  siteSlug,
 }: {
   table: string;
   column: string;
   value: string | number;
+  siteSlug: string;
 }) {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")
+    .eq("site_slug", siteSlug)
     .eq(column, value)
     .limit(1)
     .maybeSingle();
@@ -35,14 +39,17 @@ async function safeRows({
   table,
   column,
   value,
+  siteSlug,
 }: {
   table: string;
   column: string;
   value: string | number;
+  siteSlug: string;
 }) {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")
+    .eq("site_slug", siteSlug)
     .eq(column, value)
     .order("created_at", {
       ascending: false,
@@ -56,7 +63,7 @@ async function safeRows({
   return data ?? [];
 }
 
-async function findClientByToken(token: string) {
+async function findClientByToken(token: string, siteSlug: string) {
   const tokenColumns = [
     "project_portal_token",
     "portal_token",
@@ -68,6 +75,7 @@ async function findClientByToken(token: string) {
       table: "crm_clients",
       column,
       value: token,
+      siteSlug,
     });
 
     if (client) {
@@ -78,7 +86,7 @@ async function findClientByToken(token: string) {
   return null;
 }
 
-async function findProjectByToken(token: string) {
+async function findProjectByToken(token: string, siteSlug: string) {
   const tokenColumns = [
     "project_portal_token",
     "portal_token",
@@ -90,6 +98,7 @@ async function findProjectByToken(token: string) {
       table: "media_projects",
       column,
       value: token,
+      siteSlug,
     });
 
     if (project) {
@@ -100,7 +109,10 @@ async function findProjectByToken(token: string) {
   return null;
 }
 
-async function findProjectsForClient(client: Record<string, unknown>) {
+async function findProjectsForClient(
+  client: Record<string, unknown>,
+  siteSlug: string
+) {
   const projects: Record<string, unknown>[] = [];
   const seenIds = new Set<string>();
 
@@ -123,6 +135,7 @@ async function findProjectsForClient(client: Record<string, unknown>) {
         table: "media_projects",
         column: "client_id",
         value: Number(client.id),
+        siteSlug,
       })
     );
   }
@@ -137,6 +150,7 @@ async function findProjectsForClient(client: Record<string, unknown>) {
         table: "media_projects",
         column: "client_email",
         value: email,
+        siteSlug,
       })
     );
   }
@@ -148,6 +162,7 @@ export async function GET(request: Request) {
   try {
     const url = new URL(request.url);
     const token = String(url.searchParams.get("token") ?? "").trim();
+    const siteSlug = getServerSiteSlug();
 
     if (!token) {
       return NextResponse.json(
@@ -160,10 +175,10 @@ export async function GET(request: Request) {
       );
     }
 
-    const client = await findClientByToken(token);
+    const client = await findClientByToken(token, siteSlug);
 
     if (client) {
-      const projects = await findProjectsForClient(client);
+      const projects = await findProjectsForClient(client, siteSlug);
 
       return NextResponse.json({
         client,
@@ -172,12 +187,12 @@ export async function GET(request: Request) {
       });
     }
 
-    const project = await findProjectByToken(token);
+    const project = await findProjectByToken(token, siteSlug);
 
     if (!project) {
       return NextResponse.json(
         {
-          error: "Project portal token was not found.",
+          error: "Project portal token was not found for this site.",
         },
         {
           status: 404,
@@ -213,6 +228,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const clientId = Number(body.client_id ?? body.clientId);
 
     if (!Number.isFinite(clientId)) {
@@ -237,6 +253,7 @@ export async function POST(request: Request) {
         project_portal_token_created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
       })
+      .eq("site_slug", siteSlug)
       .eq("id", clientId)
       .select("*")
       .maybeSingle();
@@ -247,6 +264,7 @@ export async function POST(request: Request) {
         .update({
           project_portal_token: token,
         })
+        .eq("site_slug", siteSlug)
         .eq("id", clientId)
         .select("*")
         .maybeSingle();
