@@ -2,6 +2,7 @@ import crypto from "crypto";
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getSiteUrl(request: Request) {
@@ -38,10 +39,7 @@ function getClientName(client: Record<string, unknown>) {
 
 function getClientEmail(client: Record<string, unknown>) {
   return String(
-    client.email ||
-      client.customer_email ||
-      client.client_email ||
-      ""
+    client.email || client.customer_email || client.client_email || ""
   ).trim();
 }
 
@@ -64,10 +62,11 @@ function getTemplateBody(template: Record<string, unknown>) {
   );
 }
 
-async function findRecordById(table: string, id: string) {
+async function findRecordById(table: string, id: string, siteSlug: string) {
   const { data, error } = await supabaseAdmin
     .from(table)
     .select("*")
+    .eq("site_slug", siteSlug)
     .eq("id", id)
     .maybeSingle();
 
@@ -78,10 +77,11 @@ async function findRecordById(table: string, id: string) {
   return data;
 }
 
-async function findAnyInvoiceId() {
+async function findAnyInvoiceId(siteSlug: string) {
   const { data, error } = await supabaseAdmin
     .from("admin_invoices")
     .select("id")
+    .eq("site_slug", siteSlug)
     .order("created_at", {
       ascending: false,
     })
@@ -164,6 +164,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const clientId = getStringId(body.client_id ?? body.clientId);
     const templateId = getStringId(body.template_id ?? body.templateId);
@@ -192,15 +193,15 @@ export async function POST(request: Request) {
     }
 
     const [client, template, fallbackInvoiceId] = await Promise.all([
-      findRecordById("crm_clients", clientId),
-      findRecordById("contract_templates", templateId),
-      findAnyInvoiceId(),
+      findRecordById("crm_clients", clientId, siteSlug),
+      findRecordById("contract_templates", templateId, siteSlug),
+      findAnyInvoiceId(siteSlug),
     ]);
 
     if (!client) {
       return NextResponse.json(
         {
-          error: "Client was not found.",
+          error: "Client was not found for this site.",
         },
         {
           status: 404,
@@ -211,7 +212,7 @@ export async function POST(request: Request) {
     if (!template) {
       return NextResponse.json(
         {
-          error: "Contract template was not found.",
+          error: "Contract template was not found for this site.",
         },
         {
           status: 404,
@@ -224,31 +225,31 @@ export async function POST(request: Request) {
     const signingUrl = `${siteUrl}/contracts/${signingToken}`;
     const defaultTitle =
       contractTitle || `${getTemplateName(template)} - ${getClientName(client)}`;
-
     const now = new Date().toISOString();
 
-  const contractContent =
-    getTemplateBody(template) ||
-    "This agreement confirms the production services, deliverables, payment expectations, and client approval process for Million Dollar Ticket Productions.";
+    const contractContent =
+      getTemplateBody(template) ||
+      "This agreement confirms the production services, deliverables, payment expectations, and client approval process.";
 
-  const basePayload = {
-    contract_title: defaultTitle,
-    title: defaultTitle,
-    template_name: getTemplateName(template),
-    client_name: getClientName(client),
-    client_email: getClientEmail(client),
-    signer_name: getClientName(client),
-    signer_email: getClientEmail(client),
-    contract_body: contractContent,
-   content: contractContent,
-    contract_status: "sent",
-    status: "sent",
-    signing_token: signingToken,
-    signing_url: signingUrl,
-    sent_at: now,
-    created_at: now,
-    updated_at: now,
-  };
+    const basePayload = {
+      site_slug: siteSlug,
+      contract_title: defaultTitle,
+      title: defaultTitle,
+      template_name: getTemplateName(template),
+      client_name: getClientName(client),
+      client_email: getClientEmail(client),
+      signer_name: getClientName(client),
+      signer_email: getClientEmail(client),
+      contract_body: contractContent,
+      content: contractContent,
+      contract_status: "sent",
+      status: "sent",
+      signing_token: signingToken,
+      signing_url: signingUrl,
+      sent_at: now,
+      created_at: now,
+      updated_at: now,
+    };
 
     const contract = await insertContractWithFallback({
       basePayload,

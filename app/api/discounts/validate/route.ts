@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
 
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function roundMoney(value: number) {
@@ -25,11 +26,10 @@ function calculateDiscountAmount({
 export async function POST(request: Request) {
   try {
     const body = await request.json();
+    const siteSlug = getServerSiteSlug();
 
     const code =
-      typeof body.code === "string"
-        ? body.code.trim().toUpperCase()
-        : "";
+      typeof body.code === "string" ? body.code.trim().toUpperCase() : "";
 
     const originalPrice = Number(body.price);
 
@@ -57,25 +57,21 @@ export async function POST(request: Request) {
       );
     }
 
-    const { data: discount, error } =
-      await supabaseAdmin
-        .from("discount_codes")
-        .select("*")
-        .eq("code", code)
-        .eq("is_active", true)
-        .maybeSingle();
+    const { data: discount, error } = await supabaseAdmin
+      .from("discount_codes")
+      .select("*")
+      .eq("site_slug", siteSlug)
+      .eq("code", code)
+      .eq("is_active", true)
+      .maybeSingle();
 
     if (error) {
-      console.error(
-        "DISCOUNT VALIDATION ERROR:",
-        error
-      );
+      console.error("DISCOUNT VALIDATION ERROR:", error);
 
       return NextResponse.json(
         {
           valid: false,
-          message:
-            "Discount code could not be checked.",
+          message: "Discount code could not be checked.",
         },
         {
           status: 500,
@@ -97,15 +93,11 @@ export async function POST(request: Request) {
 
     const now = new Date();
 
-    if (
-      discount.starts_at &&
-      new Date(discount.starts_at) > now
-    ) {
+    if (discount.starts_at && new Date(discount.starts_at) > now) {
       return NextResponse.json(
         {
           valid: false,
-          message:
-            "This discount code is not active yet.",
+          message: "This discount code is not active yet.",
         },
         {
           status: 400,
@@ -113,15 +105,11 @@ export async function POST(request: Request) {
       );
     }
 
-    if (
-      discount.expires_at &&
-      new Date(discount.expires_at) < now
-    ) {
+    if (discount.expires_at && new Date(discount.expires_at) < now) {
       return NextResponse.json(
         {
           valid: false,
-          message:
-            "This discount code has expired.",
+          message: "This discount code has expired.",
         },
         {
           status: 400,
@@ -132,14 +120,12 @@ export async function POST(request: Request) {
     if (
       discount.max_uses !== null &&
       discount.max_uses !== undefined &&
-      Number(discount.used_count ?? 0) >=
-        Number(discount.max_uses)
+      Number(discount.used_count ?? 0) >= Number(discount.max_uses)
     ) {
       return NextResponse.json(
         {
           valid: false,
-          message:
-            "This discount code has reached its usage limit.",
+          message: "This discount code has reached its usage limit.",
         },
         {
           status: 400,
@@ -150,43 +136,31 @@ export async function POST(request: Request) {
     const discountAmount = roundMoney(
       calculateDiscountAmount({
         originalPrice,
-        discountType:
-          discount.discount_type,
-        discountValue: Number(
-          discount.discount_value
-        ),
+        discountType: discount.discount_type,
+        discountValue: Number(discount.discount_value),
       })
     );
 
     const discountedPrice = roundMoney(
-      Math.max(
-        originalPrice - discountAmount,
-        0
-      )
+      Math.max(originalPrice - discountAmount, 0)
     );
 
     return NextResponse.json({
       valid: true,
       code: discount.code,
-      discount_type:
-        discount.discount_type,
-      discount_value:
-        discount.discount_value,
+      discount_type: discount.discount_type,
+      discount_value: discount.discount_value,
       discount_amount: discountAmount,
       discounted_price: discountedPrice,
       message: "Discount applied.",
     });
   } catch (error) {
-    console.error(
-      "DISCOUNT VALIDATE ROUTE ERROR:",
-      error
-    );
+    console.error("DISCOUNT VALIDATE ROUTE ERROR:", error);
 
     return NextResponse.json(
       {
         valid: false,
-        message:
-          "Discount validation failed.",
+        message: "Discount validation failed.",
       },
       {
         status: 500,
