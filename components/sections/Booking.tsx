@@ -5,6 +5,7 @@ import dynamic from "next/dynamic";
 
 import "react-calendar/dist/Calendar.css";
 
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 const Calendar = dynamic(() => import("react-calendar"), {
@@ -59,26 +60,11 @@ interface DiscountResult {
 }
 
 const tipOptions = [
-  {
-    label: "No Tip",
-    value: "0",
-  },
-  {
-    label: "$5",
-    value: "5",
-  },
-  {
-    label: "$10",
-    value: "10",
-  },
-  {
-    label: "$25",
-    value: "25",
-  },
-  {
-    label: "Custom",
-    value: "custom",
-  },
+  { label: "No Tip", value: "0" },
+  { label: "$5", value: "5" },
+  { label: "$10", value: "10" },
+  { label: "$25", value: "25" },
+  { label: "Custom", value: "custom" },
 ];
 
 function formatDateForDatabase(date: Date) {
@@ -87,19 +73,6 @@ function formatDateForDatabase(date: Date) {
   const day = String(date.getDate()).padStart(2, "0");
 
   return `${year}-${month}-${day}`;
-}
-
-function formatDisplayDate(date: Date | null) {
-  if (!date) {
-    return "Select a date";
-  }
-
-  return date.toLocaleDateString(undefined, {
-    weekday: "long",
-    month: "long",
-    day: "numeric",
-    year: "numeric",
-  });
 }
 
 function timeToMinutes(time: string) {
@@ -121,7 +94,6 @@ function addMinutesToTime(time: string, minutesToAdd: number) {
 
 function formatTime(time: string) {
   const [hourString, minuteString] = time.split(":");
-
   const hour = Number(hourString);
   const minute = Number(minuteString ?? "0");
 
@@ -170,12 +142,12 @@ function isCancelledStatus(status: string | null) {
 }
 
 export default function Booking() {
+  const siteSlug = getClientSiteSlug();
+
   const [services, setServices] = useState<Service[]>([]);
   const [variations, setVariations] = useState<ServiceVariation[]>([]);
   const [availability, setAvailability] = useState<AvailabilityWindow[]>([]);
-  const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>(
-    []
-  );
+  const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>([]);
 
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedVariationId, setSelectedVariationId] = useState("");
@@ -186,9 +158,7 @@ export default function Booking() {
   const [notes, setNotes] = useState("");
 
   const [discountCode, setDiscountCode] = useState("");
-  const [appliedDiscount, setAppliedDiscount] = useState<DiscountResult | null>(
-    null
-  );
+  const [appliedDiscount, setAppliedDiscount] = useState<DiscountResult | null>(null);
   const [discountLoading, setDiscountLoading] = useState(false);
   const [discountMessage, setDiscountMessage] = useState("");
 
@@ -205,80 +175,83 @@ export default function Booking() {
 
   async function fetchBookingData() {
     try {
+      setLoading(true);
       setError("");
 
-      const [
-        servicesResult,
-        variationsResult,
-        availabilityResult,
-        bookingsResult,
-      ] = await Promise.all([
-        supabase
-          .from("services")
-          .select(
-            `
-              id,
-              title,
-              description,
-              price,
-              duration,
-              payment_mode,
-              deposit_type,
-              deposit_value
-            `
-          )
-          .order("created_at", {
-            ascending: true,
-          }),
+      const today = formatDateForDatabase(new Date());
 
-        supabase
-          .from("service_variations")
-          .select(
-            `
-              id,
-              service_id,
-              variation_name,
-              price,
-              duration,
-              payment_mode,
-              deposit_type,
-              deposit_value
-            `
-          )
-          .order("created_at", {
-            ascending: true,
-          }),
+      const [servicesResult, variationsResult, availabilityResult, bookingsResult] =
+        await Promise.all([
+          supabase
+            .from("services")
+            .select(
+              `
+                id,
+                title,
+                description,
+                price,
+                duration,
+                payment_mode,
+                deposit_type,
+                deposit_value
+              `
+            )
+            .eq("site_slug", siteSlug)
+            .order("created_at", {
+              ascending: true,
+            }),
 
-        supabase
-          .from("availability")
-          .select(
-            `
-              id,
-              available_date,
-              available_time,
-              start_time,
-              end_time,
-              timezone
-            `
-          )
-          .gte("available_date", formatDateForDatabase(new Date()))
-          .order("available_date", {
-            ascending: true,
-          }),
+          supabase
+            .from("service_variations")
+            .select(
+              `
+                id,
+                service_id,
+                variation_name,
+                price,
+                duration,
+                payment_mode,
+                deposit_type,
+                deposit_value
+              `
+            )
+            .eq("site_slug", siteSlug)
+            .order("created_at", {
+              ascending: true,
+            }),
 
-        supabase
-          .from("bookings")
-          .select(
-            `
-              id,
-              booking_date,
-              booking_time,
-              booking_end_time,
-              status
-            `
-          )
-          .gte("booking_date", formatDateForDatabase(new Date())),
-      ]);
+          supabase
+            .from("availability")
+            .select(
+              `
+                id,
+                available_date,
+                available_time,
+                start_time,
+                end_time,
+                timezone
+              `
+            )
+            .eq("site_slug", siteSlug)
+            .gte("available_date", today)
+            .order("available_date", {
+              ascending: true,
+            }),
+
+          supabase
+            .from("bookings")
+            .select(
+              `
+                id,
+                booking_date,
+                booking_time,
+                booking_end_time,
+                status
+              `
+            )
+            .eq("site_slug", siteSlug)
+            .gte("booking_date", today),
+        ]);
 
       if (servicesResult.error) {
         throw servicesResult.error;
@@ -300,8 +273,8 @@ export default function Booking() {
       setVariations((variationsResult.data ?? []) as ServiceVariation[]);
       setAvailability((availabilityResult.data ?? []) as AvailabilityWindow[]);
       setExistingBookings((bookingsResult.data ?? []) as ExistingBooking[]);
-    } catch (error) {
-      console.error("BOOKING DATA FETCH ERROR:", error);
+    } catch (fetchError) {
+      console.error("BOOKING DATA FETCH ERROR:", fetchError);
       setError("Booking information could not be loaded.");
     } finally {
       setLoading(false);
@@ -321,9 +294,7 @@ export default function Booking() {
       return [];
     }
 
-    return variations.filter(
-      (variation) => variation.service_id === selectedService.id
-    );
+    return variations.filter((variation) => variation.service_id === selectedService.id);
   }, [selectedService, variations]);
 
   const selectedVariation = useMemo(() => {
@@ -333,10 +304,8 @@ export default function Booking() {
   }, [serviceVariations, selectedVariationId]);
 
   const activeOption = selectedVariation ?? selectedService ?? null;
-
   const activePrice = roundMoney(Number(activeOption?.price ?? 0));
   const activeDuration = Number(activeOption?.duration ?? 60);
-
   const paymentMode = activeOption?.payment_mode ?? "full";
   const depositType = activeOption?.deposit_type ?? "percent";
   const depositValue = Number(activeOption?.deposit_value ?? 0);
@@ -349,10 +318,7 @@ export default function Booking() {
     return roundMoney(Math.max(Number(selectedTip || 0), 0));
   }, [selectedTip, customTip]);
 
-  const discountAmount = roundMoney(
-    Number(appliedDiscount?.discount_amount ?? 0)
-  );
-
+  const discountAmount = roundMoney(Number(appliedDiscount?.discount_amount ?? 0));
   const discountedPrice = roundMoney(Math.max(activePrice - discountAmount, 0));
 
   const depositBaseAmount = roundMoney(
@@ -371,9 +337,7 @@ export default function Booking() {
       ? roundMoney(Math.max(discountedPrice - depositBaseAmount, 0))
       : 0;
 
-  const selectedDateString = selectedDate
-    ? formatDateForDatabase(selectedDate)
-    : "";
+  const selectedDateString = selectedDate ? formatDateForDatabase(selectedDate) : "";
 
   const availableTimes = useMemo(() => {
     if (!selectedDateString || !activeOption) {
@@ -403,7 +367,6 @@ export default function Booking() {
 
       if (!windowEnd) {
         const candidateEnd = addMinutesToTime(windowStart, activeDuration);
-
         const hasConflict = bookingsForDate.some((booking) => {
           if (!booking.booking_time) {
             return false;
@@ -413,7 +376,6 @@ export default function Booking() {
           const existingEnd = booking.booking_end_time
             ? timeToMinutes(booking.booking_end_time)
             : existingStart + 60;
-
           const requestedStart = timeToMinutes(windowStart);
           const requestedEnd = timeToMinutes(candidateEnd);
 
@@ -433,7 +395,6 @@ export default function Booking() {
       while (current + activeDuration <= end) {
         const candidateStart = minutesToTime(current);
         const candidateEnd = minutesToTime(current + activeDuration);
-
         const hasConflict = bookingsForDate.some((booking) => {
           if (!booking.booking_time) {
             return false;
@@ -443,7 +404,6 @@ export default function Booking() {
           const existingEnd = booking.booking_end_time
             ? timeToMinutes(booking.booking_end_time)
             : existingStart + 60;
-
           const requestedStart = timeToMinutes(candidateStart);
           const requestedEnd = timeToMinutes(candidateEnd);
 
@@ -497,13 +457,7 @@ export default function Booking() {
     }
   }
 
-  function tileDisabled({
-    date,
-    view,
-  }: {
-    date: Date;
-    view: string;
-  }) {
+  function tileDisabled({ date, view }: { date: Date; view: string }) {
     if (view !== "month") {
       return false;
     }
@@ -521,13 +475,7 @@ export default function Booking() {
     return !availableDates.has(formatDateForDatabase(date));
   }
 
-  function tileClassName({
-    date,
-    view,
-  }: {
-    date: Date;
-    view: string;
-  }) {
+  function tileClassName({ date, view }: { date: Date; view: string }) {
     if (view !== "month") {
       return "";
     }
@@ -584,8 +532,8 @@ export default function Booking() {
       });
 
       setDiscountMessage(data.message ?? "Discount applied.");
-    } catch (error) {
-      console.error("DISCOUNT ERROR:", error);
+    } catch (discountError) {
+      console.error("DISCOUNT ERROR:", discountError);
       setDiscountMessage("Discount could not be applied.");
     } finally {
       setDiscountLoading(false);
@@ -623,7 +571,6 @@ export default function Booking() {
       }
 
       const bookingEndTime = addMinutesToTime(selectedTime, activeDuration);
-
       const serviceName = selectedVariation
         ? `${selectedService.title} — ${selectedVariation.variation_name}`
         : selectedService.title;
@@ -662,12 +609,11 @@ export default function Booking() {
       }
 
       window.location.href = data.url;
-    } catch (error) {
-      console.error("CHECKOUT ERROR:", error);
-
+    } catch (checkoutError) {
+      console.error("CHECKOUT ERROR:", checkoutError);
       setError(
-        error instanceof Error
-          ? error.message
+        checkoutError instanceof Error
+          ? checkoutError.message
           : "Checkout could not be created."
       );
     } finally {
@@ -677,28 +623,20 @@ export default function Booking() {
 
   if (loading) {
     return (
-      <section
-        id="booking"
-        className="bg-black px-6 py-24 text-white md:px-10"
-      >
+      <section id="booking" className="bg-black px-6 py-24 text-white md:px-10">
         <div className="mx-auto max-w-6xl rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
           <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
             Loading
           </p>
 
-          <h2 className="mt-4 text-3xl font-bold">
-            Loading Booking Calendar...
-          </h2>
+          <h2 className="mt-4 text-3xl font-bold">Loading Booking Calendar...</h2>
         </div>
       </section>
     );
   }
 
   return (
-    <section
-      id="booking"
-      className="bg-black px-6 py-24 text-white md:px-10"
-    >
+    <section id="booking" className="bg-black px-6 py-24 text-white md:px-10">
       <style jsx global>{`
         .react-calendar {
           width: 100%;
@@ -749,13 +687,11 @@ export default function Booking() {
             Book Now
           </p>
 
-          <h2 className="text-5xl font-bold md:text-6xl">
-            Reserve Your Spot
-          </h2>
+          <h2 className="text-5xl font-bold md:text-6xl">Reserve Your Spot</h2>
 
           <p className="mx-auto mt-5 max-w-2xl text-zinc-400">
-            Choose your service, select an available time, apply a discount,
-            add an optional tip, and complete checkout securely.
+            Choose your service, select an available time, apply a discount, add
+            an optional tip, and complete checkout securely.
           </p>
         </div>
 
@@ -771,9 +707,7 @@ export default function Booking() {
               Step 1
             </p>
 
-            <h3 className="mb-6 text-3xl font-bold">
-              Select Service
-            </h3>
+            <h3 className="mb-6 text-3xl font-bold">Select Service</h3>
 
             <div className="grid gap-4">
               {services.length === 0 ? (
@@ -797,9 +731,7 @@ export default function Booking() {
                     >
                       <div className="flex items-start justify-between gap-5">
                         <div>
-                          <h4 className="text-2xl font-bold">
-                            {service.title}
-                          </h4>
+                          <h4 className="text-2xl font-bold">{service.title}</h4>
 
                           {service.description && (
                             <p
@@ -850,15 +782,12 @@ export default function Booking() {
                   >
                     <div className="flex justify-between gap-4">
                       <span>Base Service</span>
-                      <span>
-                        {formatMoney(Number(selectedService?.price ?? 0))}
-                      </span>
+                      <span>{formatMoney(Number(selectedService?.price ?? 0))}</span>
                     </div>
                   </button>
 
                   {serviceVariations.map((variation) => {
-                    const isSelected =
-                      selectedVariationId === String(variation.id);
+                    const isSelected = selectedVariationId === String(variation.id);
 
                     return (
                       <button
@@ -873,9 +802,7 @@ export default function Booking() {
                       >
                         <div className="flex justify-between gap-4">
                           <div>
-                            <p className="font-semibold">
-                              {variation.variation_name}
-                            </p>
+                            <p className="font-semibold">{variation.variation_name}</p>
 
                             <p
                               className={`mt-1 text-xs ${
@@ -906,230 +833,195 @@ export default function Booking() {
               Step 2
             </p>
 
-            <h3 className="mb-6 text-3xl font-bold">
-              Pick Date + Time
-            </h3>
+            <h3 className="mb-6 text-3xl font-bold">Choose Date & Time</h3>
 
-            <div className="grid gap-6 lg:grid-cols-[1fr_0.85fr]">
+            <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
               <Calendar
-                onChange={handleCalendarChange as never}
+                onChange={handleCalendarChange}
                 value={selectedDate}
-                minDate={new Date()}
-                tileDisabled={tileDisabled as never}
-                tileClassName={tileClassName as never}
+                tileDisabled={tileDisabled}
+                tileClassName={tileClassName}
               />
 
-              <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
-                <p className="text-sm uppercase tracking-[0.2em] text-zinc-500">
-                  Selected Date
+              <div>
+                <p className="mb-3 text-sm font-semibold text-zinc-400">
+                  Available Times
                 </p>
 
-                <h4 className="mt-3 text-xl font-bold">
-                  {formatDisplayDate(selectedDate)}
-                </h4>
+                {!selectedService ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
+                    Select a service first.
+                  </div>
+                ) : !selectedDateString ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
+                    Select an available date.
+                  </div>
+                ) : availableTimes.length === 0 ? (
+                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
+                    No available times for this date.
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 gap-3">
+                    {availableTimes.map((time) => {
+                      const isSelected = selectedTime === time;
 
-                <p className="mt-2 text-sm text-zinc-500">
-                  Timezone: {timezone}
-                </p>
-
-                <div className="mt-6 grid max-h-[350px] gap-3 overflow-y-auto pr-1">
-                  {!activeOption ? (
-                    <p className="rounded-2xl border border-white/10 p-4 text-sm text-zinc-500">
-                      Select a service first.
-                    </p>
-                  ) : !selectedDate ? (
-                    <p className="rounded-2xl border border-white/10 p-4 text-sm text-zinc-500">
-                      Select an available date.
-                    </p>
-                  ) : availableTimes.length === 0 ? (
-                    <p className="rounded-2xl border border-white/10 p-4 text-sm text-zinc-500">
-                      No available times for this date.
-                    </p>
-                  ) : (
-                    availableTimes.map((time) => (
-                      <button
-                        key={time}
-                        type="button"
-                        onClick={() => setSelectedTime(time)}
-                        className={`rounded-2xl border px-4 py-3 text-left text-sm transition ${
-                          selectedTime === time
-                            ? "border-white bg-white text-black"
-                            : "border-white/10 text-zinc-300 hover:border-white/30 hover:bg-white/10"
-                        }`}
-                      >
-                        {formatTime(time)} —{" "}
-                        {formatTime(addMinutesToTime(time, activeDuration))}
-                      </button>
-                    ))
-                  )}
-                </div>
+                      return (
+                        <button
+                          key={time}
+                          type="button"
+                          onClick={() => setSelectedTime(time)}
+                          className={`rounded-2xl border px-4 py-3 text-sm font-semibold transition ${
+                            isSelected
+                              ? "border-white bg-white text-black"
+                              : "border-white/10 bg-black/40 text-zinc-300 hover:border-white/30"
+                          }`}
+                        >
+                          {formatTime(time)}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
               </div>
             </div>
 
-            <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
-              <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                Client Details
-              </p>
+            <div className="mt-8 grid gap-5">
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-zinc-400">
+                  Email Address
+                </span>
 
-              <div className="grid gap-4">
                 <input
                   type="email"
                   value={customerEmail}
                   onChange={(event) => setCustomerEmail(event.target.value)}
-                  placeholder="Email address"
-                  className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-white/40"
+                  placeholder="you@example.com"
+                  className="rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none focus:border-white/40"
                 />
+              </label>
+
+              <label className="grid gap-2">
+                <span className="text-sm font-semibold text-zinc-400">
+                  Notes / Details
+                </span>
 
                 <textarea
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
-                  placeholder="Project notes, questions, or special requests"
-                  rows={4}
-                  className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-white/40"
+                  placeholder="Tell us anything helpful about your booking."
+                  className="min-h-28 rounded-2xl border border-white/10 bg-black/40 px-4 py-3 text-white outline-none focus:border-white/40"
                 />
-              </div>
-            </div>
+              </label>
 
-            <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
-              <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                Discount Code
-              </p>
-
-              <div className="grid gap-3 md:grid-cols-[1fr_auto]">
-                <input
-                  value={discountCode}
-                  onChange={(event) => {
-                    setDiscountCode(event.target.value.toUpperCase());
-                    setAppliedDiscount(null);
-                    setDiscountMessage("");
-                  }}
-                  placeholder="Enter code"
-                  className="rounded-2xl border border-white/10 bg-black px-4 py-3 uppercase text-white outline-none placeholder:text-zinc-600 focus:border-white/40"
-                />
-
-                <button
-                  type="button"
-                  onClick={applyDiscountCode}
-                  disabled={discountLoading}
-                  className="rounded-full border border-white/10 px-6 py-3 text-sm text-zinc-300 transition hover:bg-white hover:text-black disabled:cursor-not-allowed disabled:opacity-50"
-                >
-                  {discountLoading ? "Checking..." : "Apply"}
-                </button>
-              </div>
-
-              {discountMessage && (
-                <p
-                  className={`mt-3 text-sm ${
-                    appliedDiscount ? "text-green-300" : "text-yellow-300"
-                  }`}
-                >
-                  {discountMessage}
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
+                <p className="mb-3 text-sm font-semibold text-zinc-400">
+                  Discount Code
                 </p>
-              )}
-            </div>
 
-            <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
-              <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                Optional Tip
-              </p>
+                <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
+                  <input
+                    value={discountCode}
+                    onChange={(event) => setDiscountCode(event.target.value)}
+                    placeholder="Enter discount code"
+                    className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
+                  />
 
-              <div className="grid gap-3 sm:grid-cols-5">
-                {tipOptions.map((option) => (
                   <button
-                    key={option.value}
                     type="button"
-                    onClick={() => setSelectedTip(option.value)}
-                    className={`rounded-2xl border px-4 py-3 text-sm transition ${
-                      selectedTip === option.value
-                        ? "border-white bg-white text-black"
-                        : "border-white/10 text-zinc-300 hover:border-white/30 hover:bg-white/10"
-                    }`}
+                    onClick={applyDiscountCode}
+                    disabled={discountLoading}
+                    className="rounded-full bg-white px-5 py-3 text-sm font-black text-black disabled:opacity-60"
                   >
-                    {option.label}
+                    {discountLoading ? "Checking..." : "Apply"}
                   </button>
-                ))}
+                </div>
+
+                {discountMessage && (
+                  <p className="mt-3 text-sm text-zinc-400">{discountMessage}</p>
+                )}
               </div>
 
-              {selectedTip === "custom" && (
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={customTip}
-                  onChange={(event) => setCustomTip(event.target.value)}
-                  placeholder="Custom tip amount"
-                  className="mt-4 w-full rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none placeholder:text-zinc-600 focus:border-white/40"
-                />
-              )}
-            </div>
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
+                <p className="mb-3 text-sm font-semibold text-zinc-400">
+                  Optional Tip
+                </p>
 
-            <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
-              <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                Payment Summary
-              </p>
+                <div className="flex flex-wrap gap-2">
+                  {tipOptions.map((option) => {
+                    const isSelected = selectedTip === option.value;
 
-              <div className="grid gap-3 text-sm">
-                <div className="flex justify-between gap-4">
-                  <span className="text-zinc-400">Original Price</span>
-                  <span>{formatMoney(activePrice)}</span>
+                    return (
+                      <button
+                        key={option.value}
+                        type="button"
+                        onClick={() => setSelectedTip(option.value)}
+                        className={`rounded-full border px-4 py-2 text-sm font-bold ${
+                          isSelected
+                            ? "border-white bg-white text-black"
+                            : "border-white/10 text-zinc-300"
+                        }`}
+                      >
+                        {option.label}
+                      </button>
+                    );
+                  })}
                 </div>
 
-                {discountAmount > 0 && (
-                  <div className="flex justify-between gap-4 text-green-300">
-                    <span>Discount</span>
-                    <span>-{formatMoney(discountAmount)}</span>
-                  </div>
+                {selectedTip === "custom" && (
+                  <input
+                    type="number"
+                    min="0"
+                    value={customTip}
+                    onChange={(event) => setCustomTip(event.target.value)}
+                    placeholder="Custom tip amount"
+                    className="mt-3 rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
+                  />
                 )}
+              </div>
 
-                <div className="flex justify-between gap-4">
-                  <span className="text-zinc-400">Adjusted Price</span>
-                  <span>{formatMoney(discountedPrice)}</span>
-                </div>
+              <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
+                <div className="grid gap-2 text-sm text-zinc-400">
+                  <div className="flex justify-between gap-4">
+                    <span>Service Price</span>
+                    <span>{formatMoney(activePrice)}</span>
+                  </div>
 
-                {paymentMode === "deposit" && (
-                  <>
-                    <div className="flex justify-between gap-4 text-yellow-300">
-                      <span>Deposit Due Now</span>
-                      <span>{formatMoney(depositBaseAmount)}</span>
+                  {discountAmount > 0 && (
+                    <div className="flex justify-between gap-4 text-green-300">
+                      <span>Discount</span>
+                      <span>-{formatMoney(discountAmount)}</span>
                     </div>
+                  )}
 
-                    <div className="flex justify-between gap-4 text-blue-300">
+                  {tipAmount > 0 && (
+                    <div className="flex justify-between gap-4">
+                      <span>Tip</span>
+                      <span>{formatMoney(tipAmount)}</span>
+                    </div>
+                  )}
+
+                  {remainingBalance > 0 && (
+                    <div className="flex justify-between gap-4 text-yellow-300">
                       <span>Remaining Balance</span>
                       <span>{formatMoney(remainingBalance)}</span>
                     </div>
-                  </>
-                )}
+                  )}
 
-                {tipAmount > 0 && (
-                  <div className="flex justify-between gap-4 text-purple-300">
-                    <span>Tip</span>
-                    <span>{formatMoney(tipAmount)}</span>
+                  <div className="mt-3 flex justify-between gap-4 border-t border-white/10 pt-3 text-lg font-black text-white">
+                    <span>Due Today</span>
+                    <span>{formatMoney(amountDueNow)}</span>
                   </div>
-                )}
-
-                <div className="mt-3 flex justify-between gap-4 border-t border-white/10 pt-4 text-lg font-bold">
-                  <span>Due Today</span>
-                  <span>{formatMoney(amountDueNow)}</span>
                 </div>
               </div>
 
               <button
                 type="button"
                 onClick={createCheckout}
-                disabled={checkoutLoading || !activeOption}
-                className="mt-6 w-full rounded-full bg-white px-6 py-4 font-semibold text-black transition hover:bg-zinc-200 disabled:cursor-not-allowed disabled:opacity-50"
+                disabled={checkoutLoading}
+                className="rounded-full bg-white px-6 py-4 text-base font-black text-black disabled:opacity-60"
               >
-                {checkoutLoading
-                  ? "Redirecting..."
-                  : paymentMode === "deposit"
-                    ? "Pay Deposit + Book"
-                    : "Pay + Book"}
+                {checkoutLoading ? "Opening Checkout..." : "Continue to Checkout"}
               </button>
-
-              <p className="mt-4 text-center text-xs leading-relaxed text-zinc-500">
-                Secure checkout powered by Stripe. Your booking is confirmed
-                after payment is completed.
-              </p>
             </div>
           </div>
         </div>
