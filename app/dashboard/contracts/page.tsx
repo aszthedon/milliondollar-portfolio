@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
 import { getDashboardAuthHeaders } from "@/lib/security/dashboardClientAuth";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 type ContractRow = Record<string, any>;
@@ -62,6 +63,8 @@ function getContractStatus(contract: ContractRow) {
 }
 
 export default function DashboardContractsPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [contracts, setContracts] = useState<ContractRow[]>([]);
   const [templates, setTemplates] = useState<TemplateRow[]>([]);
   const [clients, setClients] = useState<ClientRow[]>([]);
@@ -93,6 +96,7 @@ export default function DashboardContractsPage() {
           supabase
             .from("client_contracts")
             .select("*")
+            .eq("site_slug", siteSlug)
             .order("created_at", {
               ascending: false,
             })
@@ -101,6 +105,7 @@ export default function DashboardContractsPage() {
           supabase
             .from("contract_templates")
             .select("*")
+            .eq("site_slug", siteSlug)
             .order("created_at", {
               ascending: false,
             })
@@ -109,6 +114,7 @@ export default function DashboardContractsPage() {
           supabase
             .from("crm_clients")
             .select("*")
+            .eq("site_slug", siteSlug)
             .order("created_at", {
               ascending: false,
             })
@@ -594,7 +600,7 @@ export default function DashboardContractsPage() {
 
                 {templates.length === 0 && (
                   <p className={clients.length === 0 ? "mt-2" : ""}>
-                    No templates were found in{" "}
+                    No templates were found in {" "}
                     <strong>contract_templates</strong>. Create one above before
                     generating a contract.
                   </p>
@@ -674,7 +680,7 @@ export default function DashboardContractsPage() {
                         )}
 
                         <p>
-                          Signed:{" "}
+                          Signed: {" "}
                           {contract.signed_at
                             ? new Date(contract.signed_at).toLocaleString()
                             : "Not signed"}
@@ -682,7 +688,7 @@ export default function DashboardContractsPage() {
 
                         {contract.sent_at && (
                           <p>
-                            Sent:{" "}
+                            Sent: {" "}
                             {new Date(contract.sent_at).toLocaleString()}
                           </p>
                         )}
