@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import Stripe from "stripe";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getStripe() {
@@ -68,10 +69,7 @@ function getBookingLabel(booking: Record<string, unknown>) {
 
 function getCustomerEmail(booking: Record<string, unknown>) {
   const email = String(
-    booking.customer_email ||
-      booking.client_email ||
-      booking.email ||
-      ""
+    booking.customer_email || booking.client_email || booking.email || ""
   ).trim();
 
   return email || undefined;
@@ -81,10 +79,12 @@ async function updateBookingAfterCheckout({
   bookingId,
   sessionId,
   url,
+  siteSlug,
 }: {
   bookingId: number;
   sessionId: string;
   url: string | null;
+  siteSlug: string;
 }) {
   const richUpdate = {
     stripe_balance_session_id: sessionId,
@@ -96,6 +96,7 @@ async function updateBookingAfterCheckout({
   const { error } = await supabaseAdmin
     .from("bookings")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId);
 
   if (!error) {
@@ -107,6 +108,7 @@ async function updateBookingAfterCheckout({
     .update({
       stripe_session_id: sessionId,
     })
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId);
 }
 
@@ -119,6 +121,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
     const bookingId = getBookingId(body);
 
     if (!Number.isFinite(bookingId)) {
@@ -135,6 +138,7 @@ export async function POST(request: Request) {
     const { data: booking, error: bookingError } = await supabaseAdmin
       .from("bookings")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -145,7 +149,7 @@ export async function POST(request: Request) {
     if (!booking) {
       return NextResponse.json(
         {
-          error: "Booking was not found.",
+          error: "Booking was not found for this site.",
         },
         {
           status: 404,
@@ -189,11 +193,13 @@ export async function POST(request: Request) {
       success_url: `${siteUrl}/booking-success?session_id={CHECKOUT_SESSION_ID}`,
       cancel_url: `${siteUrl}/#booking`,
       metadata: {
+        siteSlug,
         type: "booking_balance",
         booking_id: String(bookingId),
       },
       payment_intent_data: {
         metadata: {
+          siteSlug,
           type: "booking_balance",
           booking_id: String(bookingId),
         },
@@ -204,6 +210,7 @@ export async function POST(request: Request) {
       bookingId,
       sessionId: session.id,
       url: session.url,
+      siteSlug,
     });
 
     return NextResponse.json({
