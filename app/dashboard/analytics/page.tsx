@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 interface AnalyticsSummary {
@@ -25,11 +26,14 @@ function money(value: unknown) {
   return `$${Number(value ?? 0).toFixed(2)}`;
 }
 
-async function safeCount(table: string) {
-  const { count, error } = await supabase.from(table).select("*", {
-    count: "exact",
-    head: true,
-  });
+async function safeCount(table: string, siteSlug: string) {
+  const { count, error } = await supabase
+    .from(table)
+    .select("*", {
+      count: "exact",
+      head: true,
+    })
+    .eq("site_slug", siteSlug);
 
   if (error) {
     return 0;
@@ -38,10 +42,11 @@ async function safeCount(table: string) {
   return count ?? 0;
 }
 
-async function safeRows(table: string, limit = 1000) {
+async function safeRows(table: string, siteSlug: string, limit = 1000) {
   const { data, error } = await supabase
     .from(table)
     .select("*")
+    .eq("site_slug", siteSlug)
     .order("created_at", {
       ascending: false,
     })
@@ -55,6 +60,8 @@ async function safeRows(table: string, limit = 1000) {
 }
 
 export default function DashboardAnalyticsPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [summary, setSummary] = useState<AnalyticsSummary | null>(null);
   const [latestBookings, setLatestBookings] = useState<Row[]>([]);
   const [latestProjects, setLatestProjects] = useState<Row[]>([]);
@@ -79,16 +86,16 @@ export default function DashboardAnalyticsPage() {
         projectRows,
         briefRows,
       ] = await Promise.all([
-        safeCount("bookings"),
-        safeCount("crm_clients"),
-        safeCount("admin_invoices"),
-        safeCount("client_contracts"),
-        safeCount("media_projects"),
-        safeRows("bookings", 500),
-        safeRows("admin_invoices", 500),
-        safeRows("client_contracts", 500),
-        safeRows("media_projects", 500),
-        safeRows("production_daily_briefs", 10),
+        safeCount("bookings", siteSlug),
+        safeCount("crm_clients", siteSlug),
+        safeCount("admin_invoices", siteSlug),
+        safeCount("client_contracts", siteSlug),
+        safeCount("media_projects", siteSlug),
+        safeRows("bookings", siteSlug, 500),
+        safeRows("admin_invoices", siteSlug, 500),
+        safeRows("client_contracts", siteSlug, 500),
+        safeRows("media_projects", siteSlug, 500),
+        safeRows("production_daily_briefs", siteSlug, 10),
       ]);
 
       const paidRevenue = invoiceRows
@@ -320,7 +327,7 @@ export default function DashboardAnalyticsPage() {
   );
 }
 
-function Metric({ label, value }: { label: string; value: string | number }) {
+function Metric({ label, value }: { label: string | number; value: string | number }) {
   return (
     <div className="rounded-3xl border border-white/10 bg-white/5 p-5">
       <p className="text-xs uppercase tracking-[0.2em] text-zinc-500">
