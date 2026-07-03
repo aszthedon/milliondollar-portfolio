@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(request: Request) {
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const siteSlug = getServerSiteSlug();
 
     const rawLimit = Number(url.searchParams.get("limit") ?? 25);
     const rawOffset = Number(url.searchParams.get("offset") ?? 0);
@@ -28,6 +30,7 @@ export async function GET(request: Request) {
       .select("*", {
         count: "exact",
       })
+      .eq("site_slug", siteSlug)
       .order("created_at", {
         ascending: false,
       });
@@ -62,6 +65,7 @@ export async function GET(request: Request) {
     const attempts = data ?? [];
 
     const summary = {
+      site_slug: siteSlug,
       total_count: count ?? 0,
       loaded_count: attempts.length,
       successful_loaded_count: attempts.filter((attempt) => attempt.success)
@@ -101,6 +105,7 @@ export async function DELETE(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const siteSlug = getServerSiteSlug();
     const id = url.searchParams.get("id");
 
     if (!id) {
@@ -117,6 +122,7 @@ export async function DELETE(request: Request) {
     const { error } = await supabaseAdmin
       .from("admin_login_attempts")
       .delete()
+      .eq("site_slug", siteSlug)
       .eq("id", id);
 
     if (error) {
