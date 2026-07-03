@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -65,13 +66,16 @@ function getBookingStatus(booking: Row) {
 async function getUpcomingBookings({
   startDate,
   endDate,
+  siteSlug,
 }: {
   startDate: string;
   endDate: string;
+  siteSlug: string;
 }) {
   const { data, error } = await supabaseAdmin
     .from("bookings")
     .select("*")
+    .eq("site_slug", siteSlug)
     .gte("booking_date", startDate)
     .lte("booking_date", endDate)
     .order("booking_date", {
@@ -83,7 +87,11 @@ async function getUpcomingBookings({
     return data ?? [];
   }
 
-  const fallback = await supabaseAdmin.from("bookings").select("*").limit(500);
+  const fallback = await supabaseAdmin
+    .from("bookings")
+    .select("*")
+    .eq("site_slug", siteSlug)
+    .limit(500);
 
   if (fallback.error) {
     throw fallback.error;
@@ -96,7 +104,7 @@ async function getUpcomingBookings({
   });
 }
 
-async function getRecentEmailAuditLogs(days: number) {
+async function getRecentEmailAuditLogs(days: number, siteSlug: string) {
   const cutoff = new Date();
 
   cutoff.setDate(cutoff.getDate() - days);
@@ -104,6 +112,7 @@ async function getRecentEmailAuditLogs(days: number) {
   const { data, error } = await supabaseAdmin
     .from("email_audit_logs")
     .select("*")
+    .eq("site_slug", siteSlug)
     .gte("created_at", cutoff.toISOString())
     .order("created_at", {
       ascending: false,
@@ -126,6 +135,7 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const siteSlug = getServerSiteSlug();
 
     const rawDaysAhead = Number(url.searchParams.get("days") ?? 14);
 
@@ -142,8 +152,9 @@ export async function GET(request: Request) {
       getUpcomingBookings({
         startDate,
         endDate,
+        siteSlug,
       }),
-      getRecentEmailAuditLogs(30),
+      getRecentEmailAuditLogs(30, siteSlug),
     ]);
 
     const activeBookings = bookings.filter(
@@ -176,6 +187,7 @@ export async function GET(request: Request) {
 
     return NextResponse.json({
       summary: {
+        site_slug: siteSlug,
         range_start: startDate,
         range_end: endDate,
         days_ahead: daysAhead,
