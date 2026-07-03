@@ -12,52 +12,15 @@ const Calendar = dynamic(() => import("react-calendar"), {
   ssr: false,
 });
 
-interface Service {
-  id: number;
-  title: string;
-  description: string | null;
-  price: number | null;
-  duration: number | null;
-  payment_mode?: string | null;
-  deposit_type?: string | null;
-  deposit_value?: number | null;
-}
+type Row = Record<string, any>;
 
-interface ServiceVariation {
-  id: number;
-  service_id: number;
-  variation_name: string;
-  price: number | null;
-  duration: number | null;
-  payment_mode?: string | null;
-  deposit_type?: string | null;
-  deposit_value?: number | null;
-}
-
-interface AvailabilityWindow {
-  id: number;
-  available_date: string;
-  available_time: string | null;
-  start_time: string | null;
-  end_time: string | null;
-  timezone: string | null;
-}
-
-interface ExistingBooking {
-  id: number;
-  booking_date: string;
-  booking_time: string | null;
-  booking_end_time: string | null;
-  status: string | null;
-}
-
-interface DiscountResult {
+type DiscountResult = {
   valid: boolean;
   code: string;
   discount_amount: number;
   discounted_price: number;
   message: string;
-}
+};
 
 const tipOptions = [
   { label: "No Tip", value: "0" },
@@ -144,27 +107,23 @@ function isCancelledStatus(status: string | null) {
 export default function Booking() {
   const siteSlug = getClientSiteSlug();
 
-  const [services, setServices] = useState<Service[]>([]);
-  const [variations, setVariations] = useState<ServiceVariation[]>([]);
-  const [availability, setAvailability] = useState<AvailabilityWindow[]>([]);
-  const [existingBookings, setExistingBookings] = useState<ExistingBooking[]>([]);
+  const [services, setServices] = useState<Row[]>([]);
+  const [variations, setVariations] = useState<Row[]>([]);
+  const [availability, setAvailability] = useState<Row[]>([]);
+  const [existingBookings, setExistingBookings] = useState<Row[]>([]);
 
   const [selectedServiceId, setSelectedServiceId] = useState("");
   const [selectedVariationId, setSelectedVariationId] = useState("");
   const [selectedDate, setSelectedDate] = useState<Date | null>(null);
   const [selectedTime, setSelectedTime] = useState("");
-
   const [customerEmail, setCustomerEmail] = useState("");
   const [notes, setNotes] = useState("");
-
   const [discountCode, setDiscountCode] = useState("");
   const [appliedDiscount, setAppliedDiscount] = useState<DiscountResult | null>(null);
   const [discountLoading, setDiscountLoading] = useState(false);
   const [discountMessage, setDiscountMessage] = useState("");
-
   const [selectedTip, setSelectedTip] = useState("0");
   const [customTip, setCustomTip] = useState("");
-
   const [loading, setLoading] = useState(true);
   const [checkoutLoading, setCheckoutLoading] = useState(false);
   const [error, setError] = useState("");
@@ -184,71 +143,29 @@ export default function Booking() {
         await Promise.all([
           supabase
             .from("services")
-            .select(
-              `
-                id,
-                title,
-                description,
-                price,
-                duration,
-                payment_mode,
-                deposit_type,
-                deposit_value
-              `
-            )
+            .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value")
             .eq("site_slug", siteSlug)
             .order("created_at", {
               ascending: true,
             }),
-
           supabase
             .from("service_variations")
-            .select(
-              `
-                id,
-                service_id,
-                variation_name,
-                price,
-                duration,
-                payment_mode,
-                deposit_type,
-                deposit_value
-              `
-            )
+            .select("id,service_id,variation_name,price,duration,payment_mode,deposit_type,deposit_value")
             .eq("site_slug", siteSlug)
             .order("created_at", {
               ascending: true,
             }),
-
           supabase
             .from("availability")
-            .select(
-              `
-                id,
-                available_date,
-                available_time,
-                start_time,
-                end_time,
-                timezone
-              `
-            )
+            .select("id,available_date,available_time,start_time,end_time,timezone")
             .eq("site_slug", siteSlug)
             .gte("available_date", today)
             .order("available_date", {
               ascending: true,
             }),
-
           supabase
             .from("bookings")
-            .select(
-              `
-                id,
-                booking_date,
-                booking_time,
-                booking_end_time,
-                status
-              `
-            )
+            .select("id,booking_date,booking_time,booking_end_time,status")
             .eq("site_slug", siteSlug)
             .gte("booking_date", today),
         ]);
@@ -269,10 +186,10 @@ export default function Booking() {
         throw bookingsResult.error;
       }
 
-      setServices((servicesResult.data ?? []) as Service[]);
-      setVariations((variationsResult.data ?? []) as ServiceVariation[]);
-      setAvailability((availabilityResult.data ?? []) as AvailabilityWindow[]);
-      setExistingBookings((bookingsResult.data ?? []) as ExistingBooking[]);
+      setServices(servicesResult.data ?? []);
+      setVariations(variationsResult.data ?? []);
+      setAvailability(availabilityResult.data ?? []);
+      setExistingBookings(bookingsResult.data ?? []);
     } catch (fetchError) {
       console.error("BOOKING DATA FETCH ERROR:", fetchError);
       setError("Booking information could not be loaded.");
@@ -298,9 +215,7 @@ export default function Booking() {
   }, [selectedService, variations]);
 
   const selectedVariation = useMemo(() => {
-    return serviceVariations.find(
-      (variation) => String(variation.id) === selectedVariationId
-    );
+    return serviceVariations.find((variation) => String(variation.id) === selectedVariationId);
   }, [serviceVariations, selectedVariationId]);
 
   const activeOption = selectedVariation ?? selectedService ?? null;
@@ -320,7 +235,6 @@ export default function Booking() {
 
   const discountAmount = roundMoney(Number(appliedDiscount?.discount_amount ?? 0));
   const discountedPrice = roundMoney(Math.max(activePrice - discountAmount, 0));
-
   const depositBaseAmount = roundMoney(
     calculateDepositBaseAmount({
       discountedPrice,
@@ -329,9 +243,7 @@ export default function Booking() {
       depositValue,
     })
   );
-
   const amountDueNow = roundMoney(depositBaseAmount + tipAmount);
-
   const remainingBalance =
     paymentMode === "deposit"
       ? roundMoney(Math.max(discountedPrice - depositBaseAmount, 0))
@@ -349,10 +261,7 @@ export default function Booking() {
     );
 
     const bookingsForDate = existingBookings.filter((booking) => {
-      return (
-        booking.booking_date === selectedDateString &&
-        !isCancelledStatus(booking.status)
-      );
+      return booking.booking_date === selectedDateString && !isCancelledStatus(booking.status);
     });
 
     const generatedTimes: string[] = [];
@@ -366,26 +275,7 @@ export default function Booking() {
       }
 
       if (!windowEnd) {
-        const candidateEnd = addMinutesToTime(windowStart, activeDuration);
-        const hasConflict = bookingsForDate.some((booking) => {
-          if (!booking.booking_time) {
-            return false;
-          }
-
-          const existingStart = timeToMinutes(booking.booking_time);
-          const existingEnd = booking.booking_end_time
-            ? timeToMinutes(booking.booking_end_time)
-            : existingStart + 60;
-          const requestedStart = timeToMinutes(windowStart);
-          const requestedEnd = timeToMinutes(candidateEnd);
-
-          return requestedStart < existingEnd && requestedEnd > existingStart;
-        });
-
-        if (!hasConflict) {
-          generatedTimes.push(windowStart);
-        }
-
+        generatedTimes.push(windowStart);
         return;
       }
 
@@ -421,33 +311,29 @@ export default function Booking() {
     return Array.from(new Set(generatedTimes)).sort(
       (a, b) => timeToMinutes(a) - timeToMinutes(b)
     );
-  }, [
-    selectedDateString,
-    activeOption,
-    availability,
-    existingBookings,
-    activeDuration,
-  ]);
+  }, [selectedDateString, activeOption, availability, existingBookings, activeDuration]);
 
   const availableDates = useMemo(() => {
     return new Set(availability.map((window) => window.available_date));
   }, [availability]);
 
-  function handleServiceChange(value: string) {
-    setSelectedServiceId(value);
-    setSelectedVariationId("");
-    setSelectedTime("");
+  function clearDiscount() {
     setAppliedDiscount(null);
     setDiscountCode("");
     setDiscountMessage("");
   }
 
+  function handleServiceChange(value: string) {
+    setSelectedServiceId(value);
+    setSelectedVariationId("");
+    setSelectedTime("");
+    clearDiscount();
+  }
+
   function handleVariationChange(value: string) {
     setSelectedVariationId(value);
     setSelectedTime("");
-    setAppliedDiscount(null);
-    setDiscountCode("");
-    setDiscountMessage("");
+    clearDiscount();
   }
 
   function handleCalendarChange(value: unknown) {
@@ -455,6 +341,12 @@ export default function Booking() {
       setSelectedDate(value);
       setSelectedTime("");
     }
+  }
+
+  function handleDiscountCodeChange(value: string) {
+    setDiscountCode(value);
+    setAppliedDiscount(null);
+    setDiscountMessage("");
   }
 
   function tileDisabled({ date, view }: { date: Date; view: string }) {
@@ -480,9 +372,7 @@ export default function Booking() {
       return "";
     }
 
-    const dateString = formatDateForDatabase(date);
-
-    if (availableDates.has(dateString)) {
+    if (availableDates.has(formatDateForDatabase(date))) {
       return "booking-calendar-available";
     }
 
@@ -625,10 +515,7 @@ export default function Booking() {
     return (
       <section id="booking" className="bg-black px-6 py-24 text-white md:px-10">
         <div className="mx-auto max-w-6xl rounded-3xl border border-white/10 bg-white/5 p-10 text-center">
-          <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">
-            Loading
-          </p>
-
+          <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Loading</p>
           <h2 className="mt-4 text-3xl font-bold">Loading Booking Calendar...</h2>
         </div>
       </section>
@@ -663,10 +550,6 @@ export default function Booking() {
           color: black !important;
         }
 
-        .react-calendar__tile--now {
-          background: rgba(255, 255, 255, 0.1);
-        }
-
         .react-calendar__tile:disabled {
           background: transparent;
           color: rgba(255, 255, 255, 0.25);
@@ -675,20 +558,12 @@ export default function Booking() {
         .booking-calendar-available {
           border: 1px solid rgba(34, 197, 94, 0.6) !important;
         }
-
-        .react-calendar__navigation button:disabled {
-          background: transparent;
-        }
       `}</style>
 
       <div className="mx-auto max-w-7xl">
         <div className="mb-12 text-center">
-          <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-500">
-            Book Now
-          </p>
-
+          <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-500">Book Now</p>
           <h2 className="text-5xl font-bold md:text-6xl">Reserve Your Spot</h2>
-
           <p className="mx-auto mt-5 max-w-2xl text-zinc-400">
             Choose your service, select an available time, apply a discount, add
             an optional tip, and complete checkout securely.
@@ -703,10 +578,7 @@ export default function Booking() {
 
         <div className="grid gap-8 xl:grid-cols-[0.95fr_1.05fr]">
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8">
-            <p className="mb-4 text-sm uppercase tracking-[0.25em] text-zinc-500">
-              Step 1
-            </p>
-
+            <p className="mb-4 text-sm uppercase tracking-[0.25em] text-zinc-500">Step 1</p>
             <h3 className="mb-6 text-3xl font-bold">Select Service</h3>
 
             <div className="grid gap-4">
@@ -732,28 +604,15 @@ export default function Booking() {
                       <div className="flex items-start justify-between gap-5">
                         <div>
                           <h4 className="text-2xl font-bold">{service.title}</h4>
-
                           {service.description && (
-                            <p
-                              className={`mt-2 text-sm leading-relaxed ${
-                                isSelected ? "text-zinc-700" : "text-zinc-400"
-                              }`}
-                            >
+                            <p className={`mt-2 text-sm leading-relaxed ${isSelected ? "text-zinc-700" : "text-zinc-400"}`}>
                               {service.description}
                             </p>
                           )}
                         </div>
-
                         <div className="text-right">
-                          <p className="text-xl font-bold">
-                            {formatMoney(Number(service.price ?? 0))}
-                          </p>
-
-                          <p
-                            className={`mt-1 text-xs ${
-                              isSelected ? "text-zinc-700" : "text-zinc-500"
-                            }`}
-                          >
+                          <p className="text-xl font-bold">{formatMoney(Number(service.price ?? 0))}</p>
+                          <p className={`mt-1 text-xs ${isSelected ? "text-zinc-700" : "text-zinc-500"}`}>
                             {service.duration ?? 60} min
                           </p>
                         </div>
@@ -766,10 +625,7 @@ export default function Booking() {
 
             {serviceVariations.length > 0 && (
               <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
-                <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">
-                  Package Options
-                </p>
-
+                <p className="mb-4 text-sm uppercase tracking-[0.2em] text-zinc-500">Package Options</p>
                 <div className="grid gap-3">
                   <button
                     type="button"
@@ -803,22 +659,11 @@ export default function Booking() {
                         <div className="flex justify-between gap-4">
                           <div>
                             <p className="font-semibold">{variation.variation_name}</p>
-
-                            <p
-                              className={`mt-1 text-xs ${
-                                isSelected ? "text-zinc-700" : "text-zinc-500"
-                              }`}
-                            >
-                              {variation.duration ?? 60} min ·{" "}
-                              {variation.payment_mode === "deposit"
-                                ? "Deposit accepted"
-                                : "Full payment"}
+                            <p className={`mt-1 text-xs ${isSelected ? "text-zinc-700" : "text-zinc-500"}`}>
+                              {variation.duration ?? 60} min · {variation.payment_mode === "deposit" ? "Deposit accepted" : "Full payment"}
                             </p>
                           </div>
-
-                          <span className="font-bold">
-                            {formatMoney(Number(variation.price ?? 0))}
-                          </span>
+                          <span className="font-bold">{formatMoney(Number(variation.price ?? 0))}</span>
                         </div>
                       </button>
                     );
@@ -829,10 +674,7 @@ export default function Booking() {
           </div>
 
           <div className="rounded-3xl border border-white/10 bg-white/5 p-6 md:p-8">
-            <p className="mb-4 text-sm uppercase tracking-[0.25em] text-zinc-500">
-              Step 2
-            </p>
-
+            <p className="mb-4 text-sm uppercase tracking-[0.25em] text-zinc-500">Step 2</p>
             <h3 className="mb-6 text-3xl font-bold">Choose Date & Time</h3>
 
             <div className="grid gap-6 lg:grid-cols-[1fr_0.8fr]">
@@ -844,22 +686,13 @@ export default function Booking() {
               />
 
               <div>
-                <p className="mb-3 text-sm font-semibold text-zinc-400">
-                  Available Times
-                </p>
-
+                <p className="mb-3 text-sm font-semibold text-zinc-400">Available Times</p>
                 {!selectedService ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
-                    Select a service first.
-                  </div>
+                  <EmptyBox text="Select a service first." />
                 ) : !selectedDateString ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
-                    Select an available date.
-                  </div>
+                  <EmptyBox text="Select an available date." />
                 ) : availableTimes.length === 0 ? (
-                  <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
-                    No available times for this date.
-                  </div>
+                  <EmptyBox text="No available times for this date." />
                 ) : (
                   <div className="grid grid-cols-2 gap-3">
                     {availableTimes.map((time) => {
@@ -887,10 +720,7 @@ export default function Booking() {
 
             <div className="mt-8 grid gap-5">
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-zinc-400">
-                  Email Address
-                </span>
-
+                <span className="text-sm font-semibold text-zinc-400">Email Address</span>
                 <input
                   type="email"
                   value={customerEmail}
@@ -901,10 +731,7 @@ export default function Booking() {
               </label>
 
               <label className="grid gap-2">
-                <span className="text-sm font-semibold text-zinc-400">
-                  Notes / Details
-                </span>
-
+                <span className="text-sm font-semibold text-zinc-400">Notes / Details</span>
                 <textarea
                   value={notes}
                   onChange={(event) => setNotes(event.target.value)}
@@ -914,18 +741,14 @@ export default function Booking() {
               </label>
 
               <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
-                <p className="mb-3 text-sm font-semibold text-zinc-400">
-                  Discount Code
-                </p>
-
+                <p className="mb-3 text-sm font-semibold text-zinc-400">Discount Code</p>
                 <div className="grid gap-3 sm:grid-cols-[1fr_auto]">
                   <input
                     value={discountCode}
-                    onChange={(event) => setDiscountCode(event.target.value)}
+                    onChange={(event) => handleDiscountCodeChange(event.target.value)}
                     placeholder="Enter discount code"
                     className="rounded-2xl border border-white/10 bg-black px-4 py-3 text-white outline-none focus:border-white/40"
                   />
-
                   <button
                     type="button"
                     onClick={applyDiscountCode}
@@ -935,17 +758,11 @@ export default function Booking() {
                     {discountLoading ? "Checking..." : "Apply"}
                   </button>
                 </div>
-
-                {discountMessage && (
-                  <p className="mt-3 text-sm text-zinc-400">{discountMessage}</p>
-                )}
+                {discountMessage && <p className="mt-3 text-sm text-zinc-400">{discountMessage}</p>}
               </div>
 
               <div className="rounded-3xl border border-white/10 bg-black/40 p-5">
-                <p className="mb-3 text-sm font-semibold text-zinc-400">
-                  Optional Tip
-                </p>
-
+                <p className="mb-3 text-sm font-semibold text-zinc-400">Optional Tip</p>
                 <div className="flex flex-wrap gap-2">
                   {tipOptions.map((option) => {
                     const isSelected = selectedTip === option.value;
@@ -956,9 +773,7 @@ export default function Booking() {
                         type="button"
                         onClick={() => setSelectedTip(option.value)}
                         className={`rounded-full border px-4 py-2 text-sm font-bold ${
-                          isSelected
-                            ? "border-white bg-white text-black"
-                            : "border-white/10 text-zinc-300"
+                          isSelected ? "border-white bg-white text-black" : "border-white/10 text-zinc-300"
                         }`}
                       >
                         {option.label}
@@ -966,7 +781,6 @@ export default function Booking() {
                     );
                   })}
                 </div>
-
                 {selectedTip === "custom" && (
                   <input
                     type="number"
@@ -985,28 +799,24 @@ export default function Booking() {
                     <span>Service Price</span>
                     <span>{formatMoney(activePrice)}</span>
                   </div>
-
                   {discountAmount > 0 && (
                     <div className="flex justify-between gap-4 text-green-300">
                       <span>Discount</span>
                       <span>-{formatMoney(discountAmount)}</span>
                     </div>
                   )}
-
                   {tipAmount > 0 && (
                     <div className="flex justify-between gap-4">
                       <span>Tip</span>
                       <span>{formatMoney(tipAmount)}</span>
                     </div>
                   )}
-
                   {remainingBalance > 0 && (
                     <div className="flex justify-between gap-4 text-yellow-300">
                       <span>Remaining Balance</span>
                       <span>{formatMoney(remainingBalance)}</span>
                     </div>
                   )}
-
                   <div className="mt-3 flex justify-between gap-4 border-t border-white/10 pt-3 text-lg font-black text-white">
                     <span>Due Today</span>
                     <span>{formatMoney(amountDueNow)}</span>
@@ -1027,5 +837,13 @@ export default function Booking() {
         </div>
       </div>
     </section>
+  );
+}
+
+function EmptyBox({ text }: { text: string }) {
+  return (
+    <div className="rounded-2xl border border-dashed border-white/10 bg-black/40 p-5 text-sm text-zinc-500">
+      {text}
+    </div>
   );
 }
