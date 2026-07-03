@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 function getBookingId(body: Record<string, unknown>) {
@@ -19,10 +20,12 @@ async function updateBookingWithFallback({
   bookingId,
   bookingDate,
   bookingTime,
+  siteSlug,
 }: {
   bookingId: number;
   bookingDate: string;
   bookingTime: string;
+  siteSlug: string;
 }) {
   const richUpdate = {
     booking_date: bookingDate,
@@ -36,6 +39,7 @@ async function updateBookingWithFallback({
   const { data, error } = await supabaseAdmin
     .from("bookings")
     .update(richUpdate)
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId)
     .select("*")
     .maybeSingle();
@@ -50,6 +54,7 @@ async function updateBookingWithFallback({
       booking_date: bookingDate,
       booking_time: bookingTime,
     })
+    .eq("site_slug", siteSlug)
     .eq("id", bookingId)
     .select("*")
     .maybeSingle();
@@ -70,6 +75,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json().catch(() => ({}));
+    const siteSlug = getServerSiteSlug();
 
     const bookingId = getBookingId(body);
     const bookingDate = getBookingDate(body);
@@ -100,6 +106,7 @@ export async function POST(request: Request) {
     const { data: existingBooking, error: existingError } = await supabaseAdmin
       .from("bookings")
       .select("*")
+      .eq("site_slug", siteSlug)
       .eq("id", bookingId)
       .maybeSingle();
 
@@ -110,7 +117,7 @@ export async function POST(request: Request) {
     if (!existingBooking) {
       return NextResponse.json(
         {
-          error: "Booking was not found.",
+          error: "Booking was not found for this site.",
         },
         {
           status: 404,
@@ -122,6 +129,7 @@ export async function POST(request: Request) {
       bookingId,
       bookingDate,
       bookingTime,
+      siteSlug,
     });
 
     return NextResponse.json({
