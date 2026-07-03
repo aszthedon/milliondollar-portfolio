@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { requireAdminRequest } from "@/lib/security/adminGuard";
+import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export async function GET(request: Request) {
@@ -12,6 +13,7 @@ export async function GET(request: Request) {
 
   try {
     const url = new URL(request.url);
+    const siteSlug = getServerSiteSlug();
 
     const rawLimit = Number(url.searchParams.get("limit") ?? 25);
     const rawOffset = Number(url.searchParams.get("offset") ?? 0);
@@ -29,6 +31,7 @@ export async function GET(request: Request) {
       .select("*", {
         count: "exact",
       })
+      .eq("site_slug", siteSlug)
       .order("created_at", {
         ascending: false,
       });
@@ -64,6 +67,7 @@ export async function GET(request: Request) {
     const logs = data ?? [];
 
     const summary = {
+      site_slug: siteSlug,
       total_count: count ?? 0,
       loaded_count: logs.length,
       success_loaded_count: logs.filter((log) => log.status === "success")
