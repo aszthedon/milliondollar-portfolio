@@ -4,6 +4,7 @@ import { useEffect, useMemo, useState } from "react";
 
 import AdminUnlockGate from "@/components/admin/AdminUnlockGate";
 import { getDashboardAuthHeaders } from "@/lib/security/dashboardClientAuth";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 type ClientRow = Record<string, any>;
@@ -24,6 +25,8 @@ function getClientEmail(client: ClientRow) {
 }
 
 export default function DashboardClientsPage() {
+  const siteSlug = getClientSiteSlug();
+
   const [clients, setClients] = useState<ClientRow[]>([]);
   const [loading, setLoading] = useState(true);
   const [actionLoading, setActionLoading] = useState("");
@@ -40,6 +43,7 @@ export default function DashboardClientsPage() {
       const { data, error: clientsError } = await supabase
         .from("crm_clients")
         .select("*")
+        .eq("site_slug", siteSlug)
         .order("created_at", {
           ascending: false,
         })
