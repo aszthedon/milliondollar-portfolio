@@ -17,9 +17,30 @@ type Service = {
   deposit_value?: number | null;
 };
 
+type Variation = {
+  id: number;
+  service_id: number;
+  variation_name: string;
+  price: number | null;
+  duration: number | null;
+  payment_mode?: string | null;
+  deposit_type?: string | null;
+  deposit_value?: number | null;
+};
+
 type FormState = {
   title: string;
   description: string;
+  price: string;
+  duration: string;
+  payment_mode: string;
+  deposit_type: string;
+  deposit_value: string;
+};
+
+type VariationFormState = {
+  service_id: string;
+  variation_name: string;
   price: string;
   duration: string;
   payment_mode: string;
@@ -39,49 +60,39 @@ const blankForm: FormState = {
   deposit_value: "25",
 };
 
+const blankVariationForm: VariationFormState = {
+  service_id: "",
+  variation_name: "",
+  price: "",
+  duration: "",
+  payment_mode: "deposit",
+  deposit_type: "amount",
+  deposit_value: "25",
+};
+
 const starterHairServices: FormState[] = [
-  {
-    title: "Silk Press",
-    description: "Smooth silk press styling appointment with a polished finish.",
-    price: "85",
-    duration: "120",
-    payment_mode: "deposit",
-    deposit_type: "amount",
-    deposit_value: "25",
-  },
-  {
-    title: "Wig Install",
-    description: "Wig install appointment with styling and finishing details.",
-    price: "125",
-    duration: "150",
-    payment_mode: "deposit",
-    deposit_type: "amount",
-    deposit_value: "35",
-  },
-  {
-    title: "Quick Weave",
-    description: "Quick weave styling appointment for a fresh, confident look.",
-    price: "100",
-    duration: "150",
-    payment_mode: "deposit",
-    deposit_type: "amount",
-    deposit_value: "30",
-  },
-  {
-    title: "Wash, Treatment & Style",
-    description: "Wash, conditioning treatment, and finished style appointment.",
-    price: "95",
-    duration: "150",
-    payment_mode: "deposit",
-    deposit_type: "amount",
-    deposit_value: "25",
-  },
+  { title: "Silk Press", description: "Smooth silk press styling appointment with a polished finish.", price: "85", duration: "120", payment_mode: "deposit", deposit_type: "amount", deposit_value: "25" },
+  { title: "Wig Install", description: "Wig install appointment with styling and finishing details.", price: "125", duration: "150", payment_mode: "deposit", deposit_type: "amount", deposit_value: "35" },
+  { title: "Quick Weave", description: "Quick weave styling appointment for a fresh, confident look.", price: "100", duration: "150", payment_mode: "deposit", deposit_type: "amount", deposit_value: "30" },
+  { title: "Wash, Treatment & Style", description: "Wash, conditioning treatment, and finished style appointment.", price: "95", duration: "150", payment_mode: "deposit", deposit_type: "amount", deposit_value: "25" },
 ];
 
-function asPayload(input: FormState | Service) {
+function servicePayload(input: FormState | Service) {
   return {
     title: String(input.title ?? "").trim(),
     description: String(input.description ?? "").trim(),
+    price: Number(input.price ?? 0),
+    duration: Number(input.duration ?? 60),
+    payment_mode: String(input.payment_mode ?? "deposit"),
+    deposit_type: String(input.deposit_type ?? "amount"),
+    deposit_value: Number(input.deposit_value ?? 0),
+  };
+}
+
+function variationPayload(input: VariationFormState | Variation) {
+  return {
+    service_id: Number(input.service_id ?? 0),
+    variation_name: String(input.variation_name ?? "").trim(),
     price: Number(input.price ?? 0),
     duration: Number(input.duration ?? 60),
     payment_mode: String(input.payment_mode ?? "deposit"),
@@ -95,7 +106,9 @@ export default function ServiceManagerPage() {
   const canUseHairStarter = siteSlug === fixMyCrownSlug;
 
   const [services, setServices] = useState<Service[]>([]);
+  const [variations, setVariations] = useState<Variation[]>([]);
   const [form, setForm] = useState<FormState>(blankForm);
+  const [variationForm, setVariationForm] = useState<VariationFormState>(blankVariationForm);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState(false);
   const [activeId, setActiveId] = useState<number | null>(null);
@@ -104,6 +117,10 @@ export default function ServiceManagerPage() {
 
   function setField<K extends keyof FormState>(key: K, value: FormState[K]) {
     setForm((current) => ({ ...current, [key]: value }));
+  }
+
+  function setVariationField<K extends keyof VariationFormState>(key: K, value: VariationFormState[K]) {
+    setVariationForm((current) => ({ ...current, [key]: value }));
   }
 
   async function api(path: string, init?: RequestInit) {
@@ -117,20 +134,22 @@ export default function ServiceManagerPage() {
     });
 
     const data = await response.json().catch(() => ({}));
-
-    if (!response.ok) {
-      throw new Error(data.error ?? "Request failed.");
-    }
-
+    if (!response.ok) throw new Error(data.error ?? "Request failed.");
     return data;
   }
 
-  async function loadServices() {
+  async function loadAll() {
     try {
       setLoading(true);
       setError("");
-      const data = await api("/api/dashboard/services");
-      setServices(data.services ?? []);
+      const [serviceData, variationData] = await Promise.all([
+        api("/api/dashboard/services"),
+        api("/api/dashboard/service-variations"),
+      ]);
+      const nextServices = (serviceData.services ?? []) as Service[];
+      setServices(nextServices);
+      setVariations((variationData.variations ?? []) as Variation[]);
+      setVariationForm((current) => ({ ...current, service_id: current.service_id || String(nextServices[0]?.id ?? "") }));
     } catch (loadError) {
       setError(loadError instanceof Error ? loadError.message : "Services could not be loaded.");
     } finally {
@@ -139,20 +158,13 @@ export default function ServiceManagerPage() {
   }
 
   useEffect(() => {
-    loadServices();
+    loadAll();
   }, []);
 
   async function createService(input: FormState) {
-    const payload = asPayload(input);
-
-    if (!payload.title || payload.price <= 0 || payload.duration <= 0) {
-      throw new Error("Service title, price, and duration are required.");
-    }
-
-    await api("/api/dashboard/services", {
-      method: "POST",
-      body: JSON.stringify(payload),
-    });
+    const payload = servicePayload(input);
+    if (!payload.title || payload.price <= 0 || payload.duration <= 0) throw new Error("Service title, price, and duration are required.");
+    await api("/api/dashboard/services", { method: "POST", body: JSON.stringify(payload) });
   }
 
   async function handleCreate() {
@@ -163,9 +175,33 @@ export default function ServiceManagerPage() {
       await createService(form);
       setForm(blankForm);
       setMessage("Service created.");
-      await loadServices();
+      await loadAll();
     } catch (createError) {
       setError(createError instanceof Error ? createError.message : "Service could not be created.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function createVariation(input: VariationFormState) {
+    const payload = variationPayload(input);
+    if (!payload.service_id || !payload.variation_name || payload.price <= 0 || payload.duration <= 0) {
+      throw new Error("Service, variation name, price, and duration are required.");
+    }
+    await api("/api/dashboard/service-variations", { method: "POST", body: JSON.stringify(payload) });
+  }
+
+  async function handleCreateVariation() {
+    try {
+      setBusy(true);
+      setError("");
+      setMessage("");
+      await createVariation(variationForm);
+      setVariationForm((current) => ({ ...blankVariationForm, service_id: current.service_id }));
+      setMessage("Variation created.");
+      await loadAll();
+    } catch (createError) {
+      setError(createError instanceof Error ? createError.message : "Variation could not be created.");
     } finally {
       setBusy(false);
     }
@@ -181,19 +217,12 @@ export default function ServiceManagerPage() {
       setBusy(true);
       setError("");
       setMessage("");
-
       for (const starterService of starterHairServices) {
-        const exists = services.some(
-          (service) => service.title.toLowerCase() === starterService.title.toLowerCase()
-        );
-
-        if (!exists) {
-          await createService(starterService);
-        }
+        const exists = services.some((service) => service.title.toLowerCase() === starterService.title.toLowerCase());
+        if (!exists) await createService(starterService);
       }
-
       setMessage("Starter hair services added.");
-      await loadServices();
+      await loadAll();
     } catch (starterError) {
       setError(starterError instanceof Error ? starterError.message : "Starter hair services could not be added.");
     } finally {
@@ -206,14 +235,26 @@ export default function ServiceManagerPage() {
       setActiveId(service.id);
       setError("");
       setMessage("");
-      await api("/api/dashboard/services", {
-        method: "PUT",
-        body: JSON.stringify({ id: service.id, ...asPayload(service) }),
-      });
+      await api("/api/dashboard/services", { method: "PUT", body: JSON.stringify({ id: service.id, ...servicePayload(service) }) });
       setMessage("Service saved.");
-      await loadServices();
+      await loadAll();
     } catch (saveError) {
       setError(saveError instanceof Error ? saveError.message : "Service could not be saved.");
+    } finally {
+      setActiveId(null);
+    }
+  }
+
+  async function saveVariation(variation: Variation) {
+    try {
+      setActiveId(variation.id);
+      setError("");
+      setMessage("");
+      await api("/api/dashboard/service-variations", { method: "PUT", body: JSON.stringify({ id: variation.id, ...variationPayload(variation) }) });
+      setMessage("Variation saved.");
+      await loadAll();
+    } catch (saveError) {
+      setError(saveError instanceof Error ? saveError.message : "Variation could not be saved.");
     } finally {
       setActiveId(null);
     }
@@ -226,7 +267,7 @@ export default function ServiceManagerPage() {
       setMessage("");
       await api(`/api/dashboard/services?id=${id}`, { method: "DELETE" });
       setMessage("Service deleted.");
-      await loadServices();
+      await loadAll();
     } catch (deleteError) {
       setError(deleteError instanceof Error ? deleteError.message : "Service could not be deleted.");
     } finally {
@@ -234,8 +275,27 @@ export default function ServiceManagerPage() {
     }
   }
 
+  async function deleteVariation(id: number) {
+    try {
+      setActiveId(id);
+      setError("");
+      setMessage("");
+      await api(`/api/dashboard/service-variations?id=${id}`, { method: "DELETE" });
+      setMessage("Variation deleted.");
+      await loadAll();
+    } catch (deleteError) {
+      setError(deleteError instanceof Error ? deleteError.message : "Variation could not be deleted.");
+    } finally {
+      setActiveId(null);
+    }
+  }
+
   function updateLocal(id: number, updates: Partial<Service>) {
     setServices((current) => current.map((service) => (service.id === id ? { ...service, ...updates } : service)));
+  }
+
+  function updateLocalVariation(id: number, updates: Partial<Variation>) {
+    setVariations((current) => current.map((variation) => (variation.id === id ? { ...variation, ...updates } : variation)));
   }
 
   return (
@@ -246,19 +306,9 @@ export default function ServiceManagerPage() {
             <div>
               <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-500">Dashboard · {siteSlug}</p>
               <h1 className="text-5xl font-black">Service Manager</h1>
-              <p className="mt-4 max-w-2xl text-zinc-400">Create and edit booking services through the protected dashboard API.</p>
+              <p className="mt-4 max-w-2xl text-zinc-400">Create services and service variations through protected dashboard APIs.</p>
             </div>
-
-            {canUseHairStarter && (
-              <button
-                type="button"
-                onClick={addStarterHairServices}
-                disabled={busy || loading}
-                className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white disabled:opacity-60"
-              >
-                Add Starter Hair Services
-              </button>
-            )}
+            {canUseHairStarter && <button type="button" onClick={addStarterHairServices} disabled={busy || loading} className="rounded-full border border-white/10 px-5 py-3 text-sm font-black text-white disabled:opacity-60">Add Starter Hair Services</button>}
           </div>
 
           {error && <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
@@ -273,46 +323,50 @@ export default function ServiceManagerPage() {
               <Field label="Deposit Value" value={form.deposit_value} onChange={(value) => setField("deposit_value", value)} type="number" />
               <SelectField label="Payment Mode" value={form.payment_mode} onChange={(value) => setField("payment_mode", value)} options={[["full", "Full Payment"], ["deposit", "Deposit"]]} />
               <SelectField label="Deposit Type" value={form.deposit_type} onChange={(value) => setField("deposit_type", value)} options={[["amount", "Dollar Amount"], ["percent", "Percentage"]]} />
-              <label className="grid gap-2 md:col-span-2">
-                <span className="text-sm text-zinc-400">Description</span>
-                <textarea value={form.description} onChange={(event) => setField("description", event.target.value)} className="min-h-24 rounded-xl border border-white/10 bg-black px-4 py-3" />
-              </label>
+              <label className="grid gap-2 md:col-span-2"><span className="text-sm text-zinc-400">Description</span><textarea value={form.description} onChange={(event) => setField("description", event.target.value)} className="min-h-24 rounded-xl border border-white/10 bg-black px-4 py-3" /></label>
             </div>
-            <button type="button" onClick={handleCreate} disabled={busy} className="mt-5 rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-60">
-              {busy ? "Saving..." : "Create Service"}
-            </button>
+            <button type="button" onClick={handleCreate} disabled={busy} className="mt-5 rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-60">{busy ? "Saving..." : "Create Service"}</button>
           </section>
 
-          {loading ? (
-            <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-zinc-400">Loading services...</div>
-          ) : services.length === 0 ? (
-            <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-zinc-400">No services yet.</div>
-          ) : (
+          <section className="rounded-3xl border border-white/10 bg-white/5 p-6">
+            <h2 className="text-2xl font-black">Create Variation</h2>
+            <p className="mt-2 text-sm text-zinc-400">Attach a variation to one service. Variations appear in the booking flow.</p>
+            <div className="mt-5 grid gap-4 md:grid-cols-2">
+              <label className="grid gap-2"><span className="text-sm text-zinc-400">Parent Service</span><select value={variationForm.service_id} onChange={(event) => setVariationField("service_id", event.target.value)} className="rounded-xl border border-white/10 bg-black px-4 py-3"><option value="">Choose service</option>{services.map((service) => <option key={service.id} value={service.id}>{service.title}</option>)}</select></label>
+              <Field label="Variation Name" value={variationForm.variation_name} onChange={(value) => setVariationField("variation_name", value)} />
+              <Field label="Price" value={variationForm.price} onChange={(value) => setVariationField("price", value)} type="number" />
+              <Field label="Duration Minutes" value={variationForm.duration} onChange={(value) => setVariationField("duration", value)} type="number" />
+              <Field label="Deposit Value" value={variationForm.deposit_value} onChange={(value) => setVariationField("deposit_value", value)} type="number" />
+              <SelectField label="Payment Mode" value={variationForm.payment_mode} onChange={(value) => setVariationField("payment_mode", value)} options={[["full", "Full Payment"], ["deposit", "Deposit"]]} />
+              <SelectField label="Deposit Type" value={variationForm.deposit_type} onChange={(value) => setVariationField("deposit_type", value)} options={[["amount", "Dollar Amount"], ["percent", "Percentage"]]} />
+            </div>
+            <button type="button" onClick={handleCreateVariation} disabled={busy || services.length === 0} className="mt-5 rounded-full bg-white px-6 py-3 text-sm font-black text-black disabled:opacity-60">Create Variation</button>
+          </section>
+
+          {loading ? <div className="rounded-3xl border border-white/10 bg-white/5 p-8 text-zinc-400">Loading services...</div> : services.length === 0 ? <div className="rounded-3xl border border-dashed border-white/10 bg-white/5 p-8 text-center text-zinc-400">No services yet.</div> : (
             <section className="grid gap-6">
-              {services.map((service) => (
-                <div key={service.id} className="rounded-3xl border border-white/10 bg-white/5 p-6">
-                  <div className="grid gap-4 md:grid-cols-2">
-                    <Field label="Title" value={service.title ?? ""} onChange={(value) => updateLocal(service.id, { title: value })} />
-                    <Field label="Price" value={String(service.price ?? "")} onChange={(value) => updateLocal(service.id, { price: Number(value) })} type="number" />
-                    <Field label="Duration" value={String(service.duration ?? "")} onChange={(value) => updateLocal(service.id, { duration: Number(value) })} type="number" />
-                    <Field label="Deposit Value" value={String(service.deposit_value ?? "")} onChange={(value) => updateLocal(service.id, { deposit_value: Number(value) })} type="number" />
-                    <SelectField label="Payment Mode" value={service.payment_mode ?? "deposit"} onChange={(value) => updateLocal(service.id, { payment_mode: value })} options={[["full", "Full Payment"], ["deposit", "Deposit"]]} />
-                    <SelectField label="Deposit Type" value={service.deposit_type ?? "amount"} onChange={(value) => updateLocal(service.id, { deposit_type: value })} options={[["amount", "Dollar Amount"], ["percent", "Percentage"]]} />
-                    <label className="grid gap-2 md:col-span-2">
-                      <span className="text-sm text-zinc-400">Description</span>
-                      <textarea value={service.description ?? ""} onChange={(event) => updateLocal(service.id, { description: event.target.value })} className="min-h-24 rounded-xl border border-white/10 bg-black px-4 py-3" />
-                    </label>
+              {services.map((service) => {
+                const serviceVariations = variations.filter((variation) => variation.service_id === service.id);
+                return (
+                  <div key={service.id} className="rounded-3xl border border-white/10 bg-white/5 p-6">
+                    <div className="grid gap-4 md:grid-cols-2">
+                      <Field label="Title" value={service.title ?? ""} onChange={(value) => updateLocal(service.id, { title: value })} />
+                      <Field label="Price" value={String(service.price ?? "")} onChange={(value) => updateLocal(service.id, { price: Number(value) })} type="number" />
+                      <Field label="Duration" value={String(service.duration ?? "")} onChange={(value) => updateLocal(service.id, { duration: Number(value) })} type="number" />
+                      <Field label="Deposit Value" value={String(service.deposit_value ?? "")} onChange={(value) => updateLocal(service.id, { deposit_value: Number(value) })} type="number" />
+                      <SelectField label="Payment Mode" value={service.payment_mode ?? "deposit"} onChange={(value) => updateLocal(service.id, { payment_mode: value })} options={[["full", "Full Payment"], ["deposit", "Deposit"]]} />
+                      <SelectField label="Deposit Type" value={service.deposit_type ?? "amount"} onChange={(value) => updateLocal(service.id, { deposit_type: value })} options={[["amount", "Dollar Amount"], ["percent", "Percentage"]]} />
+                      <label className="grid gap-2 md:col-span-2"><span className="text-sm text-zinc-400">Description</span><textarea value={service.description ?? ""} onChange={(event) => updateLocal(service.id, { description: event.target.value })} className="min-h-24 rounded-xl border border-white/10 bg-black px-4 py-3" /></label>
+                    </div>
+                    <div className="mt-5 flex flex-wrap gap-3"><button disabled={activeId === service.id} onClick={() => saveService(service)} className="rounded-full border border-green-500 px-5 py-2 text-green-400 disabled:opacity-50">{activeId === service.id ? "Saving..." : "Save Service"}</button><button disabled={activeId === service.id} onClick={() => deleteService(service.id)} className="rounded-full border border-red-500 px-5 py-2 text-red-500 disabled:opacity-50">Delete Service</button></div>
+
+                    <div className="mt-8 rounded-3xl border border-white/10 bg-black/40 p-5">
+                      <h3 className="text-xl font-black">Variations</h3>
+                      {serviceVariations.length === 0 ? <p className="mt-3 text-sm text-zinc-500">No variations for this service yet.</p> : <div className="mt-5 grid gap-4">{serviceVariations.map((variation) => <div key={variation.id} className="rounded-2xl border border-white/10 bg-white/5 p-4"><div className="grid gap-3 md:grid-cols-2"><Field label="Variation Name" value={variation.variation_name ?? ""} onChange={(value) => updateLocalVariation(variation.id, { variation_name: value })} /><Field label="Price" value={String(variation.price ?? "")} onChange={(value) => updateLocalVariation(variation.id, { price: Number(value) })} type="number" /><Field label="Duration" value={String(variation.duration ?? "")} onChange={(value) => updateLocalVariation(variation.id, { duration: Number(value) })} type="number" /><Field label="Deposit Value" value={String(variation.deposit_value ?? "")} onChange={(value) => updateLocalVariation(variation.id, { deposit_value: Number(value) })} type="number" /><SelectField label="Payment Mode" value={variation.payment_mode ?? "deposit"} onChange={(value) => updateLocalVariation(variation.id, { payment_mode: value })} options={[["full", "Full Payment"], ["deposit", "Deposit"]]} /><SelectField label="Deposit Type" value={variation.deposit_type ?? "amount"} onChange={(value) => updateLocalVariation(variation.id, { deposit_type: value })} options={[["amount", "Dollar Amount"], ["percent", "Percentage"]]} /></div><div className="mt-4 flex flex-wrap gap-3"><button disabled={activeId === variation.id} onClick={() => saveVariation(variation)} className="rounded-full border border-green-500 px-5 py-2 text-green-400 disabled:opacity-50">Save Variation</button><button disabled={activeId === variation.id} onClick={() => deleteVariation(variation.id)} className="rounded-full border border-red-500 px-5 py-2 text-red-500 disabled:opacity-50">Delete Variation</button></div></div>)}</div>}
+                    </div>
                   </div>
-                  <div className="mt-5 flex flex-wrap gap-3">
-                    <button disabled={activeId === service.id} onClick={() => saveService(service)} className="rounded-full border border-green-500 px-5 py-2 text-green-400 disabled:opacity-50">
-                      {activeId === service.id ? "Saving..." : "Save"}
-                    </button>
-                    <button disabled={activeId === service.id} onClick={() => deleteService(service.id)} className="rounded-full border border-red-500 px-5 py-2 text-red-500 disabled:opacity-50">
-                      Delete
-                    </button>
-                  </div>
-                </div>
-              ))}
+                );
+              })}
             </section>
           )}
         </div>
@@ -322,23 +376,9 @@ export default function ServiceManagerPage() {
 }
 
 function Field({ label, value, onChange, type = "text" }: { label: string; value: string; onChange: (value: string) => void; type?: string }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-sm text-zinc-400">{label}</span>
-      <input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-white/10 bg-black px-4 py-3" />
-    </label>
-  );
+  return <label className="grid gap-2"><span className="text-sm text-zinc-400">{label}</span><input type={type} value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-white/10 bg-black px-4 py-3" /></label>;
 }
 
 function SelectField({ label, value, onChange, options }: { label: string; value: string; onChange: (value: string) => void; options: [string, string][] }) {
-  return (
-    <label className="grid gap-2">
-      <span className="text-sm text-zinc-400">{label}</span>
-      <select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-white/10 bg-black px-4 py-3">
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
-        ))}
-      </select>
-    </label>
-  );
+  return <label className="grid gap-2"><span className="text-sm text-zinc-400">{label}</span><select value={value} onChange={(event) => onChange(event.target.value)} className="rounded-xl border border-white/10 bg-black px-4 py-3">{options.map(([optionValue, optionLabel]) => <option key={optionValue} value={optionValue}>{optionLabel}</option>)}</select></label>;
 }
