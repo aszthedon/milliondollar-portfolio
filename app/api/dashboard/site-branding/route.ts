@@ -30,21 +30,26 @@ function cleanBoolean(value: unknown, fallback: boolean) {
   return fallback;
 }
 
-function buildSiteSettingsPayload(body: Body) {
+function cleanTextWithFallback(value: unknown, fallback: unknown) {
+  const text = cleanText(value);
+  return text || cleanText(fallback);
+}
+
+function buildSiteSettingsPayload(body: Body, existingSettings: Body = {}) {
   const brand = (body.branding ?? {}) as Body;
   const theme = (body.theme ?? {}) as Body;
   const content = (body.content ?? {}) as Body;
   const contact = (body.contact ?? {}) as Body;
   const footer = (body.footer ?? {}) as Body;
 
-  const primaryColor = cleanColor(brand.primaryColor, "#ffffff");
-  const secondaryColor = cleanColor(brand.secondaryColor, "#a1a1aa");
-  const accentColor = cleanColor(brand.accentColor, "#3b82f6");
-  const backgroundColor = cleanColor(brand.backgroundColor, "#000000");
-  const foregroundColor = cleanColor(brand.foregroundColor, "#ffffff");
-  const logoUrl = cleanText(brand.logoUrl);
-  const faviconUrl = cleanText(brand.faviconUrl);
-  const siteName = cleanText(content.siteName);
+  const primaryColor = cleanColor(brand.primaryColor, cleanText(existingSettings.primary_color) || "#ffffff");
+  const secondaryColor = cleanColor(brand.secondaryColor, cleanText(existingSettings.secondary_color) || "#a1a1aa");
+  const accentColor = cleanColor(brand.accentColor, cleanText(existingSettings.accent_color) || "#3b82f6");
+  const backgroundColor = cleanColor(brand.backgroundColor, cleanText(existingSettings.background_color) || "#000000");
+  const foregroundColor = cleanColor(brand.foregroundColor, cleanText(existingSettings.foreground_color) || "#ffffff");
+  const logoUrl = cleanTextWithFallback(brand.logoUrl, existingSettings.logo_url);
+  const faviconUrl = cleanTextWithFallback(brand.faviconUrl, existingSettings.favicon_url);
+  const siteName = cleanTextWithFallback(content.siteName, existingSettings.business_name || existingSettings.navbar_brand_text);
 
   return {
     business_name: siteName,
@@ -54,36 +59,37 @@ function buildSiteSettingsPayload(body: Body) {
     favicon_url: faviconUrl,
     primary_color: primaryColor,
     secondary_color: secondaryColor,
-    hero_heading: cleanText(content.heroHeading),
-    hero_description: cleanText(content.heroDescription),
-    header_cta_label: cleanText(content.headerCtaLabel),
-    header_cta_href: cleanText(content.headerCtaHref),
-    cta_heading: cleanText(content.ctaHeading),
-    cta_description: cleanText(content.ctaDescription),
-    cta_primary_label: cleanText(content.ctaPrimaryLabel),
-    cta_primary_href: cleanText(content.ctaPrimaryHref),
-    cta_secondary_label: cleanText(content.ctaSecondaryLabel),
-    cta_secondary_href: cleanText(content.ctaSecondaryHref),
-    show_cta_section: cleanBoolean(content.showCtaSection, true),
-    show_dashboard_button: cleanBoolean(content.showDashboardButton, true),
-    show_client_portal_button: cleanBoolean(content.showClientPortalButton, true),
-    contact_heading: cleanText(contact.heading),
-    contact_description: cleanText(contact.description),
-    contact_button_label: cleanText(contact.buttonLabel),
-    show_contact_section: cleanBoolean(contact.showSection, true),
-    footer_description: cleanText(footer.description),
-    footer_email: cleanText(footer.email),
-    footer_phone: cleanText(footer.phone),
-    footer_address: cleanText(footer.address),
-    footer_instagram_url: cleanText(footer.instagramUrl),
-    footer_facebook_url: cleanText(footer.facebookUrl),
-    footer_tiktok_url: cleanText(footer.tiktokUrl),
-    footer_youtube_url: cleanText(footer.youtubeUrl),
-    show_footer: cleanBoolean(footer.showFooter, true),
-    seo_title: cleanText(content.seoTitle) || siteName,
-    seo_description: cleanText(content.seoDescription),
-    seo_keywords: cleanText(content.seoKeywords),
-    seo_og_image_url: cleanText(content.seoOgImageUrl),
+    hero_heading: cleanTextWithFallback(content.heroHeading, existingSettings.hero_heading),
+    hero_description: cleanTextWithFallback(content.heroDescription, existingSettings.hero_description),
+    header_cta_label: cleanTextWithFallback(content.headerCtaLabel, existingSettings.header_cta_label),
+    header_cta_href: cleanTextWithFallback(content.headerCtaHref, existingSettings.header_cta_href),
+    cta_heading: cleanTextWithFallback(content.ctaHeading, existingSettings.cta_heading),
+    cta_description: cleanTextWithFallback(content.ctaDescription, existingSettings.cta_description),
+    cta_primary_label: cleanTextWithFallback(content.ctaPrimaryLabel, existingSettings.cta_primary_label),
+    cta_primary_href: cleanTextWithFallback(content.ctaPrimaryHref, existingSettings.cta_primary_href),
+    cta_secondary_label: cleanTextWithFallback(content.ctaSecondaryLabel, existingSettings.cta_secondary_label),
+    cta_secondary_href: cleanTextWithFallback(content.ctaSecondaryHref, existingSettings.cta_secondary_href),
+    show_cta_section: cleanBoolean(content.showCtaSection, cleanBoolean(existingSettings.show_cta_section, true)),
+    show_dashboard_button: cleanBoolean(content.showDashboardButton, cleanBoolean(existingSettings.show_dashboard_button, true)),
+    show_client_portal_button: cleanBoolean(content.showClientPortalButton, cleanBoolean(existingSettings.show_client_portal_button, true)),
+    contact_heading: cleanTextWithFallback(contact.heading, existingSettings.contact_heading),
+    contact_description: cleanTextWithFallback(contact.description, existingSettings.contact_description),
+    contact_button_label: cleanTextWithFallback(contact.buttonLabel, existingSettings.contact_button_label),
+    show_contact_section: cleanBoolean(contact.showSection, cleanBoolean(existingSettings.show_contact_section, true)),
+    footer_description: cleanTextWithFallback(footer.description, existingSettings.footer_description),
+    footer_email: cleanTextWithFallback(footer.email, existingSettings.footer_email),
+    footer_phone: cleanTextWithFallback(footer.phone, existingSettings.footer_phone),
+    footer_address: cleanTextWithFallback(footer.address, existingSettings.footer_address),
+    footer_instagram_url: cleanTextWithFallback(footer.instagramUrl, existingSettings.footer_instagram_url),
+    footer_facebook_url: cleanTextWithFallback(footer.facebookUrl, existingSettings.footer_facebook_url),
+    footer_tiktok_url: cleanTextWithFallback(footer.tiktokUrl, existingSettings.footer_tiktok_url),
+    footer_youtube_url: cleanTextWithFallback(footer.youtubeUrl, existingSettings.footer_youtube_url),
+    footer_copyright_text: cleanTextWithFallback(footer.copyrightText, existingSettings.footer_copyright_text),
+    show_footer: cleanBoolean(footer.showFooter, cleanBoolean(existingSettings.show_footer, true)),
+    seo_title: cleanTextWithFallback(content.seoTitle, existingSettings.seo_title || siteName),
+    seo_description: cleanTextWithFallback(content.seoDescription, existingSettings.seo_description),
+    seo_keywords: cleanTextWithFallback(content.seoKeywords, existingSettings.seo_keywords),
+    seo_og_image_url: cleanTextWithFallback(content.seoOgImageUrl, existingSettings.seo_og_image_url),
     branding_settings: {
       logoUrl,
       faviconUrl,
@@ -94,10 +100,10 @@ function buildSiteSettingsPayload(body: Body) {
       foregroundColor,
     },
     theme_settings: {
-      mode: cleanText(theme.mode) || "dark",
-      style: cleanText(theme.style) || "premium",
-      radius: cleanText(theme.radius) || "rounded",
-      fontFamily: cleanText(theme.fontFamily),
+      mode: cleanTextWithFallback(theme.mode, (existingSettings.theme_settings as Body | undefined)?.mode || "dark"),
+      style: cleanTextWithFallback(theme.style, (existingSettings.theme_settings as Body | undefined)?.style || "premium"),
+      radius: cleanTextWithFallback(theme.radius, (existingSettings.theme_settings as Body | undefined)?.radius || "rounded"),
+      fontFamily: cleanTextWithFallback(theme.fontFamily, (existingSettings.theme_settings as Body | undefined)?.fontFamily),
     },
     dashboard_settings: {
       allowBrandEditing: true,
@@ -171,13 +177,14 @@ export async function POST(request: Request) {
   try {
     const siteSlug = getServerSiteSlug();
     const body = (await request.json().catch(() => ({}))) as Body;
-    const payload = buildSiteSettingsPayload(body);
 
     const { data: existing } = await supabaseAdmin
       .from("site_settings")
-      .select("id")
+      .select("*")
       .eq("site_slug", siteSlug)
       .maybeSingle();
+
+    const payload = buildSiteSettingsPayload(body, (existing ?? {}) as Body);
 
     const query = existing?.id
       ? supabaseAdmin
