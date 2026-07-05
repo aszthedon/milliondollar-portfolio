@@ -22,6 +22,7 @@ type HeaderFooterForm = {
   footerFacebookUrl: string;
   footerTiktokUrl: string;
   footerYoutubeUrl: string;
+  footerCopyrightText: string;
   showFooter: boolean;
   seoTitle: string;
   seoDescription: string;
@@ -43,6 +44,7 @@ const blankForm: HeaderFooterForm = {
   footerFacebookUrl: "",
   footerTiktokUrl: "",
   footerYoutubeUrl: "",
+  footerCopyrightText: "",
   showFooter: true,
   seoTitle: "",
   seoDescription: "",
@@ -98,6 +100,7 @@ export default function HeaderFooterDashboardPage() {
         footerFacebookUrl: settings.footer_facebook_url || "",
         footerTiktokUrl: settings.footer_tiktok_url || "",
         footerYoutubeUrl: settings.footer_youtube_url || "",
+        footerCopyrightText: settings.footer_copyright_text || "",
         showFooter: settings.show_footer ?? true,
         seoTitle: settings.seo_title || settings.business_name || "",
         seoDescription: settings.seo_description || "",
@@ -168,6 +171,7 @@ export default function HeaderFooterDashboardPage() {
             facebookUrl: form.footerFacebookUrl,
             tiktokUrl: form.footerTiktokUrl,
             youtubeUrl: form.footerYoutubeUrl,
+            copyrightText: form.footerCopyrightText,
             showFooter: form.showFooter,
           },
         }),
@@ -193,7 +197,7 @@ export default function HeaderFooterDashboardPage() {
           <div>
             <p className="mb-4 text-sm uppercase tracking-[0.3em] text-zinc-500">Dashboard · {siteSlug}</p>
             <h1 className="text-5xl font-black">Header & Footer</h1>
-            <p className="mt-4 max-w-2xl text-zinc-400">Edit the front-left navbar brand text, header button, footer copy, contact info, social links, and tab metadata.</p>
+            <p className="mt-4 max-w-2xl text-zinc-400">Edit the exact areas circled on the public site: front-left navbar brand, footer heading, footer paragraph, contact/socials, and copyright line.</p>
           </div>
 
           {error && <div className="rounded-3xl border border-red-500/30 bg-red-500/10 p-4 text-red-200">{error}</div>}
@@ -221,6 +225,7 @@ export default function HeaderFooterDashboardPage() {
               <Field label="Facebook URL" value={form.footerFacebookUrl} onChange={(value) => setField("footerFacebookUrl", value)} />
               <Field label="TikTok URL" value={form.footerTiktokUrl} onChange={(value) => setField("footerTiktokUrl", value)} />
               <Field label="YouTube URL" value={form.footerYoutubeUrl} onChange={(value) => setField("footerYoutubeUrl", value)} />
+              <Field label="Footer Copyright Line" value={form.footerCopyrightText} onChange={(value) => setField("footerCopyrightText", value)} />
               <label className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black p-4"><input type="checkbox" checked={form.showFooter} onChange={(event) => setField("showFooter", event.target.checked)} /><span>Show Footer</span></label>
 
               <h2 className="pt-4 text-2xl font-black">Browser Tab</h2>
