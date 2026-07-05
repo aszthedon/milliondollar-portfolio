@@ -19,6 +19,7 @@ interface FooterSettings {
   footer_youtube_url: string | null;
   footer_copyright_text: string | null;
   show_footer: boolean | null;
+  show_policies_link: boolean | null;
 }
 
 const fallbackFooter: FooterSettings = {
@@ -33,16 +34,12 @@ const fallbackFooter: FooterSettings = {
   footer_youtube_url: null,
   footer_copyright_text: "© 2026 Million Dollar Ticket Productions. All rights reserved.",
   show_footer: true,
+  show_policies_link: true,
 };
 
 function SocialLink({ href, label }: { href: string | null; label: string }) {
   if (!href) return null;
-
-  return (
-    <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 transition hover:text-white">
-      {label}
-    </a>
-  );
+  return <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 transition hover:text-white">{label}</a>;
 }
 
 export default function Footer() {
@@ -54,7 +51,7 @@ export default function Footer() {
     async function fetchFooter() {
       const { data, error } = await supabase
         .from("site_settings")
-        .select("footer_brand_text,footer_description,footer_email,footer_phone,footer_address,footer_instagram_url,footer_facebook_url,footer_tiktok_url,footer_youtube_url,footer_copyright_text,show_footer")
+        .select("footer_brand_text,footer_description,footer_email,footer_phone,footer_address,footer_instagram_url,footer_facebook_url,footer_tiktok_url,footer_youtube_url,footer_copyright_text,show_footer,show_policies_link")
         .eq("site_slug", siteSlug)
         .maybeSingle();
 
@@ -77,6 +74,7 @@ export default function Footer() {
           footer_youtube_url: data.footer_youtube_url,
           footer_copyright_text: data.footer_copyright_text || fallbackFooter.footer_copyright_text,
           show_footer: data.show_footer ?? true,
+          show_policies_link: data.show_policies_link ?? true,
         });
       }
 
@@ -93,10 +91,13 @@ export default function Footer() {
       <Container>
         <div className="grid gap-10 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
           <div>
-            <Link href="/" className="text-xl font-bold text-white">
-              {settings.footer_brand_text}
-            </Link>
+            <Link href="/" className="text-xl font-bold text-white">{settings.footer_brand_text}</Link>
             <p className="mt-4 max-w-xl leading-relaxed text-zinc-400">{settings.footer_description}</p>
+            {settings.show_policies_link !== false && (
+              <Link href="/policies" className="mt-4 inline-block text-sm text-zinc-400 transition hover:text-white">
+                Policies
+              </Link>
+            )}
           </div>
 
           <div>
@@ -119,9 +120,7 @@ export default function Footer() {
           </div>
         </div>
 
-        <div className="mt-10 border-t border-white/10 pt-6 text-sm text-zinc-500">
-          {settings.footer_copyright_text}
-        </div>
+        <div className="mt-10 border-t border-white/10 pt-6 text-sm text-zinc-500">{settings.footer_copyright_text}</div>
       </Container>
     </footer>
   );
