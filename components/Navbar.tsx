@@ -42,10 +42,7 @@ function NavLinkItem({ link, mobile = false, onClick }: { link: NavigationLink; 
   const external = isExternalLink(link.href) || link.opens_new_tab;
   const className = mobile ? "rounded-2xl px-4 py-3 text-zinc-300 transition hover:bg-white/10 hover:text-white" : "text-sm text-zinc-300 transition hover:text-white";
 
-  if (external) {
-    return <a href={link.href} target={link.opens_new_tab ? "_blank" : undefined} rel={link.opens_new_tab ? "noopener noreferrer" : undefined} onClick={onClick} className={className}>{link.label}</a>;
-  }
-
+  if (external) return <a href={link.href} target={link.opens_new_tab ? "_blank" : undefined} rel={link.opens_new_tab ? "noopener noreferrer" : undefined} onClick={onClick} className={className}>{link.label}</a>;
   return <Link href={link.href} onClick={onClick} className={className}>{link.label}</Link>;
 }
 
@@ -61,6 +58,7 @@ export default function Navbar() {
         supabase
           .from("navigation_links")
           .select("id,label,href,sort_order,is_visible,opens_new_tab")
+          .eq("site_slug", siteSlug)
           .eq("is_visible", true)
           .order("sort_order", { ascending: true })
           .order("created_at", { ascending: true }),
@@ -88,27 +86,22 @@ export default function Navbar() {
   const showPoliciesLink = settings?.show_policies_link ?? true;
   const showCta = Boolean(ctaLabel.trim() && ctaHref.trim());
   const ctaIsExternal = isExternalLink(ctaHref);
-  const visibleLinks = showPoliciesLink ? [...links, { id: 9999, label: "Policies", href: "/policies", sort_order: 9999, is_visible: true, opens_new_tab: false }] : links;
+  const hasPoliciesLink = links.some((link) => link.href === "/policies" || link.label.toLowerCase() === "policies");
+  const visibleLinks = showPoliciesLink && !hasPoliciesLink ? [...links, { id: 9999, label: "Policies", href: "/policies", sort_order: 9999, is_visible: true, opens_new_tab: false }] : links;
 
   return (
     <nav className="fixed top-0 z-50 w-full border-b border-white/10 bg-black/80 backdrop-blur">
       <Container>
         <div className="flex items-center justify-between py-4">
           <Link href="/" className="max-w-[220px] truncate text-lg font-semibold uppercase tracking-[0.2em] text-white">{brandText}</Link>
-
-          <div className="hidden items-center gap-8 md:flex">
-            {visibleLinks.map((link) => <NavLinkItem key={link.id} link={link} />)}
-          </div>
-
+          <div className="hidden items-center gap-8 md:flex">{visibleLinks.map((link) => <NavLinkItem key={link.id} link={link} />)}</div>
           <div className="hidden items-center gap-3 md:flex">
             {showClientPortalButton && <Link href="/client" className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white hover:text-black">Client Portal</Link>}
             {showDashboardButton && <Link href="/dashboard" className="rounded-full border border-white/10 px-4 py-2 text-sm text-zinc-300 transition hover:bg-white hover:text-black">Dashboard</Link>}
             {showCta && (ctaIsExternal ? <a href={ctaHref} target="_blank" rel="noopener noreferrer" className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200">{ctaLabel}</a> : <Link href={ctaHref} className="rounded-full bg-white px-4 py-2 text-sm font-medium text-black transition hover:bg-zinc-200">{ctaLabel}</Link>)}
           </div>
-
           <button onClick={() => setMenuOpen((current) => !current)} className="text-white md:hidden" aria-label="Toggle menu">{menuOpen ? <X size={28} /> : <Menu size={28} />}</button>
         </div>
-
         {menuOpen && (
           <div className="flex flex-col gap-2 border-t border-white/10 py-6 md:hidden">
             {visibleLinks.map((link) => <NavLinkItem key={link.id} link={link} mobile onClick={() => setMenuOpen(false)} />)}
