@@ -1,10 +1,10 @@
 "use client";
 
 import { useEffect, useState } from "react";
-
 import Link from "next/link";
 
 import Container from "@/components/Container";
+import { getClientSiteSlug } from "@/lib/site/siteConfig";
 import { supabase } from "@/lib/supabase";
 
 interface FooterSettings {
@@ -23,8 +23,7 @@ interface FooterSettings {
 
 const fallbackFooter: FooterSettings = {
   footer_brand_text: "Million Dollar Ticket Productions",
-  footer_description:
-    "A polished booking website template built for service brands, creatives, and entrepreneurs.",
+  footer_description: "A polished booking website template built for service brands, creatives, and entrepreneurs.",
   footer_email: null,
   footer_phone: null,
   footer_address: null,
@@ -32,33 +31,22 @@ const fallbackFooter: FooterSettings = {
   footer_facebook_url: null,
   footer_tiktok_url: null,
   footer_youtube_url: null,
-  footer_copyright_text:
-    "© 2026 Million Dollar Ticket Productions. All rights reserved.",
+  footer_copyright_text: "© 2026 Million Dollar Ticket Productions. All rights reserved.",
   show_footer: true,
 };
 
-function SocialLink({
-  href,
-  label,
-}: {
-  href: string | null;
-  label: string;
-}) {
+function SocialLink({ href, label }: { href: string | null; label: string }) {
   if (!href) return null;
 
   return (
-    <a
-      href={href}
-      target="_blank"
-      rel="noopener noreferrer"
-      className="text-sm text-zinc-400 transition hover:text-white"
-    >
+    <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 transition hover:text-white">
       {label}
     </a>
   );
 }
 
 export default function Footer() {
+  const siteSlug = getClientSiteSlug();
   const [settings, setSettings] = useState<FooterSettings>(fallbackFooter);
   const [loading, setLoading] = useState(true);
 
@@ -66,22 +54,8 @@ export default function Footer() {
     async function fetchFooter() {
       const { data, error } = await supabase
         .from("site_settings")
-        .select(
-          `
-            footer_brand_text,
-            footer_description,
-            footer_email,
-            footer_phone,
-            footer_address,
-            footer_instagram_url,
-            footer_facebook_url,
-            footer_tiktok_url,
-            footer_youtube_url,
-            footer_copyright_text,
-            show_footer
-          `
-        )
-        .limit(1)
+        .select("footer_brand_text,footer_description,footer_email,footer_phone,footer_address,footer_instagram_url,footer_facebook_url,footer_tiktok_url,footer_youtube_url,footer_copyright_text,show_footer")
+        .eq("site_slug", siteSlug)
         .maybeSingle();
 
       if (error) {
@@ -92,10 +66,8 @@ export default function Footer() {
 
       if (data) {
         setSettings({
-          footer_brand_text:
-            data.footer_brand_text || fallbackFooter.footer_brand_text,
-          footer_description:
-            data.footer_description || fallbackFooter.footer_description,
+          footer_brand_text: data.footer_brand_text || fallbackFooter.footer_brand_text,
+          footer_description: data.footer_description || fallbackFooter.footer_description,
           footer_email: data.footer_email,
           footer_phone: data.footer_phone,
           footer_address: data.footer_address,
@@ -103,8 +75,7 @@ export default function Footer() {
           footer_facebook_url: data.footer_facebook_url,
           footer_tiktok_url: data.footer_tiktok_url,
           footer_youtube_url: data.footer_youtube_url,
-          footer_copyright_text:
-            data.footer_copyright_text || fallbackFooter.footer_copyright_text,
+          footer_copyright_text: data.footer_copyright_text || fallbackFooter.footer_copyright_text,
           show_footer: data.show_footer ?? true,
         });
       }
@@ -113,11 +84,9 @@ export default function Footer() {
     }
 
     fetchFooter();
-  }, []);
+  }, [siteSlug]);
 
-  if (!loading && settings.show_footer === false) {
-    return null;
-  }
+  if (!loading && settings.show_footer === false) return null;
 
   return (
     <footer className="border-t border-white/10 py-12">
@@ -127,17 +96,11 @@ export default function Footer() {
             <Link href="/" className="text-xl font-bold text-white">
               {settings.footer_brand_text}
             </Link>
-
-            <p className="mt-4 max-w-xl leading-relaxed text-zinc-400">
-              {settings.footer_description}
-            </p>
+            <p className="mt-4 max-w-xl leading-relaxed text-zinc-400">{settings.footer_description}</p>
           </div>
 
           <div>
-            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">
-              Contact
-            </h3>
-
+            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">Contact</h3>
             <div className="mt-4 grid gap-2 text-sm text-zinc-400">
               {settings.footer_email && <p>{settings.footer_email}</p>}
               {settings.footer_phone && <p>{settings.footer_phone}</p>}
@@ -146,10 +109,7 @@ export default function Footer() {
           </div>
 
           <div>
-            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">
-              Social
-            </h3>
-
+            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">Social</h3>
             <div className="mt-4 flex flex-wrap gap-4">
               <SocialLink href={settings.footer_instagram_url} label="Instagram" />
               <SocialLink href={settings.footer_facebook_url} label="Facebook" />
