@@ -13,6 +13,11 @@ const dashboardLinks = [
     href: "/dashboard/settings",
   },
   {
+    title: "Header & Footer",
+    description: "Edit the front-left navbar brand text, header button, footer copy, contact info, socials, and tab metadata.",
+    href: "/dashboard/header-footer",
+  },
+  {
     title: "Navigation & Tab Name",
     description: "Edit the navbar brand text, browser tab name, SEO description, and menu links.",
     href: "/dashboard/navigation",
@@ -159,7 +164,7 @@ export default function DashboardPage() {
                 <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Launch Control</p>
                 <h1 className="mt-3 text-4xl font-black md:text-5xl">Dashboard</h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                  Use these buttons to manage every changeable site element: branding, navbar, tab name, services, variations, policies, bookings, clients, contracts, invoices, projects, and analytics.
+                  Use these buttons to manage every changeable site element: branding, header, footer, navbar, tab name, services, variations, policies, bookings, clients, contracts, invoices, projects, and analytics.
                 </p>
               </div>
 
