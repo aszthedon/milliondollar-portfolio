@@ -54,7 +54,7 @@ export async function GET(request: Request) {
         .order("created_at", { ascending: true }),
       supabaseAdmin
         .from("site_settings")
-        .select("seo_title,seo_description,navbar_brand_text,show_policies_link")
+        .select("seo_title,seo_description,business_name,navbar_brand_text,show_policies_link")
         .eq("site_slug", siteSlug)
         .maybeSingle(),
     ]);
@@ -62,12 +62,7 @@ export async function GET(request: Request) {
     if (linksError) throw linksError;
     if (settingsError) throw settingsError;
 
-    return NextResponse.json({
-      site_slug: siteSlug,
-      links: links ?? [],
-      settings,
-      message: "Navigation loaded.",
-    });
+    return NextResponse.json({ site_slug: siteSlug, links: links ?? [], settings, message: "Navigation loaded." });
   } catch (error) {
     console.error("LOAD NAVIGATION ERROR:", error);
     return NextResponse.json({ error: "Navigation could not be loaded." }, { status: 500 });
@@ -107,12 +102,9 @@ export async function PUT(request: Request) {
     const body = (await request.json().catch(() => ({}))) as Body;
     const linkId = cleanNumber(body.id);
 
-    if (!linkId) {
-      return NextResponse.json({ error: "Link ID is required." }, { status: 400 });
-    }
+    if (!linkId) return NextResponse.json({ error: "Link ID is required." }, { status: 400 });
 
     const payload = buildLinkPayload(body);
-
     const { data, error } = await supabaseAdmin
       .from("navigation_links")
       .update(payload)
@@ -137,12 +129,17 @@ export async function PATCH(request: Request) {
   try {
     const siteSlug = getServerSiteSlug();
     const body = (await request.json().catch(() => ({}))) as Body;
+    const brandText = cleanText(body.navbar_brand_text);
+    const now = new Date().toISOString();
+
     const payload = {
-      seo_title: cleanText(body.seo_title),
+      seo_title: cleanText(body.seo_title) || brandText,
       seo_description: cleanText(body.seo_description),
-      navbar_brand_text: cleanText(body.navbar_brand_text),
+      business_name: brandText,
+      navbar_brand_text: brandText,
+      footer_brand_text: brandText,
       show_policies_link: cleanBoolean(body.show_policies_link, true),
-      updated_at: new Date().toISOString(),
+      updated_at: now,
     };
 
     const { data: existing } = await supabaseAdmin
@@ -158,7 +155,14 @@ export async function PATCH(request: Request) {
     const { data, error } = await query;
     if (error) throw error;
 
-    return NextResponse.json({ site_slug: siteSlug, settings: data, message: "Navigation settings saved." });
+    if (brandText) {
+      await supabaseAdmin
+        .from("sites")
+        .update({ name: brandText, updated_at: now })
+        .eq("site_slug", siteSlug);
+    }
+
+    return NextResponse.json({ site_slug: siteSlug, settings: data, message: "Navbar brand and tab settings saved." });
   } catch (error) {
     console.error("SAVE NAVIGATION SETTINGS ERROR:", error);
     return NextResponse.json({ error: "Navigation settings could not be saved." }, { status: 500 });
@@ -174,9 +178,7 @@ export async function DELETE(request: Request) {
     const url = new URL(request.url);
     const linkId = cleanNumber(url.searchParams.get("id"));
 
-    if (!linkId) {
-      return NextResponse.json({ error: "Link ID is required." }, { status: 400 });
-    }
+    if (!linkId) return NextResponse.json({ error: "Link ID is required." }, { status: 400 });
 
     const { error } = await supabaseAdmin
       .from("navigation_links")
