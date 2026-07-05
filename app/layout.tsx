@@ -1,72 +1,71 @@
 import type { Metadata } from "next";
 import { Inter } from "next/font/google";
 
+import { getServerSiteSlug, getSiteName, getSiteUrlFallback } from "@/lib/site/siteConfig";
+import { supabaseAdmin } from "@/lib/supabase-admin";
+
 import "./globals.css";
 
-const inter = Inter({
-  subsets: ["latin"],
-});
+const inter = Inter({ subsets: ["latin"] });
 
-export const metadata: Metadata = {
-  title: {
-    default: "Million Dollar Ticket Productions",
-    template: "%s | Million Dollar Ticket Productions",
-  },
-  description:
-    "A multimedia production, booking, branding, and creative services platform built for service brands, creatives, and entrepreneurs.",
-  keywords: [
-    "booking website",
-    "creative services",
-    "multimedia production",
-    "branding",
-    "appointment booking",
-    "client portal",
-    "Million Dollar Ticket Productions",
-  ],
-  authors: [
-    {
-      name: "Million Dollar Ticket Productions",
+export async function generateMetadata(): Promise<Metadata> {
+  const siteSlug = getServerSiteSlug();
+  const fallbackName = getSiteName();
+  const fallbackUrl = getSiteUrlFallback();
+
+  const { data } = await supabaseAdmin
+    .from("site_settings")
+    .select("seo_title,seo_description,seo_keywords,seo_og_image_url,business_name,navbar_brand_text")
+    .eq("site_slug", siteSlug)
+    .maybeSingle();
+
+  const title = data?.seo_title || data?.business_name || data?.navbar_brand_text || fallbackName;
+  const description =
+    data?.seo_description ||
+    "A polished booking website built for service brands, creatives, and entrepreneurs.";
+  const keywords = String(data?.seo_keywords ?? "")
+    .split(",")
+    .map((keyword) => keyword.trim())
+    .filter(Boolean);
+  const imageUrl = data?.seo_og_image_url || undefined;
+
+  return {
+    title: {
+      default: title,
+      template: `%s | ${title}`,
     },
-  ],
-  creator: "Million Dollar Ticket Productions",
-  publisher: "Million Dollar Ticket Productions",
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_SITE_URL ||
-      "http://localhost:3000"
-  ),
-  openGraph: {
-    title: "Million Dollar Ticket Productions",
-    description:
-      "A multimedia production, booking, branding, and creative services platform built for service brands, creatives, and entrepreneurs.",
-    url:
-      process.env.NEXT_PUBLIC_SITE_URL ||
-      "http://localhost:3000",
-    siteName: "Million Dollar Ticket Productions",
-    type: "website",
-    locale: "en_US",
-  },
-  twitter: {
-    card: "summary_large_image",
-    title: "Million Dollar Ticket Productions",
-    description:
-      "A multimedia production, booking, branding, and creative services platform built for service brands, creatives, and entrepreneurs.",
-  },
-  robots: {
-    index: true,
-    follow: true,
-  },
-};
+    description,
+    keywords,
+    authors: [{ name: title }],
+    creator: title,
+    publisher: title,
+    metadataBase: new URL(fallbackUrl),
+    openGraph: {
+      title,
+      description,
+      url: fallbackUrl,
+      siteName: title,
+      type: "website",
+      locale: "en_US",
+      images: imageUrl ? [imageUrl] : undefined,
+    },
+    twitter: {
+      card: "summary_large_image",
+      title,
+      description,
+      images: imageUrl ? [imageUrl] : undefined,
+    },
+    robots: {
+      index: true,
+      follow: true,
+    },
+  };
+}
 
-export default function RootLayout({
-  children,
-}: Readonly<{
-  children: React.ReactNode;
-}>) {
+export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
     <html lang="en" suppressHydrationWarning>
-      <body className={inter.className}>
-        {children}
-      </body>
+      <body className={inter.className}>{children}</body>
     </html>
   );
 }
