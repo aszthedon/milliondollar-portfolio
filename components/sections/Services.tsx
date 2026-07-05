@@ -6,7 +6,6 @@ import Container from "../Container";
 import FadeIn from "../FadeIn";
 
 import { getClientSiteSlug } from "@/lib/site/siteConfig";
-import { supabase } from "@/lib/supabase";
 
 type Service = {
   id: number;
@@ -30,30 +29,18 @@ export default function Services() {
   async function fetchServices() {
     try {
       setLoading(true);
+      const response = await fetch("/api/public/services", { cache: "no-store" });
+      const data = await response.json().catch(() => ({}));
 
-      const [servicesResult, settingsResult] = await Promise.all([
-        supabase
-          .from("services")
-          .select("id,title,description,price,duration")
-          .eq("site_slug", siteSlug)
-          .order("created_at", { ascending: true }),
-        supabase
-          .from("site_settings")
-          .select("business_name,navbar_brand_text")
-          .eq("site_slug", siteSlug)
-          .maybeSingle(),
-      ]);
-
-      if (servicesResult.error) {
-        console.error("PUBLIC SERVICES ERROR:", servicesResult.error);
+      if (!response.ok) {
+        throw new Error(data.error ?? "Services could not be loaded.");
       }
 
-      if (settingsResult.error) {
-        console.error("PUBLIC SERVICES SETTINGS ERROR:", settingsResult.error);
-      }
-
-      setServices((servicesResult.data ?? []) as Service[]);
-      setSettings((settingsResult.data ?? null) as SiteSettings | null);
+      setServices((data.services ?? []) as Service[]);
+      setSettings((data.settings ?? null) as SiteSettings | null);
+    } catch (error) {
+      console.error("PUBLIC SERVICES ERROR:", error);
+      setServices([]);
     } finally {
       setLoading(false);
     }
@@ -65,11 +52,7 @@ export default function Services() {
 
   const heading = useMemo(() => {
     const brand = settings?.navbar_brand_text || settings?.business_name;
-
-    if (siteSlug === "fix-my-crown") {
-      return "Hair Services";
-    }
-
+    if (siteSlug === "fix-my-crown") return "Hair Services";
     return brand ? `${brand} Services` : "Services";
   }, [settings, siteSlug]);
 
