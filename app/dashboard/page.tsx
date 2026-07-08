@@ -28,6 +28,11 @@ const dashboardLinks = [
     href: "/dashboard/service-manager",
   },
   {
+    title: "Add-ons & Deposit Rules",
+    description: "Create service add-ons, enable add-ons for specific services, and set automatic deposit rules by client/service/total.",
+    href: "/dashboard/addons-deposits",
+  },
+  {
     title: "Policies",
     description: "Edit the public policies page, deposits, cancellations, no-show rules, and preparation notes.",
     href: "/dashboard/policies",
@@ -164,7 +169,7 @@ export default function DashboardPage() {
                 <p className="text-sm uppercase tracking-[0.3em] text-zinc-500">Launch Control</p>
                 <h1 className="mt-3 text-4xl font-black md:text-5xl">Dashboard</h1>
                 <p className="mt-3 max-w-3xl text-sm leading-6 text-zinc-400">
-                  Use these buttons to manage every changeable site element: branding, header, footer, navbar, tab name, services, variations, policies, bookings, clients, contracts, invoices, projects, and analytics.
+                  Use these buttons to manage every changeable site element: branding, header, footer, navbar, tab name, services, variations, add-ons, deposit rules, policies, bookings, clients, contracts, invoices, projects, and analytics.
                 </p>
               </div>
 
