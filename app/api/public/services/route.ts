@@ -5,15 +5,16 @@ import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
 
-export async function GET() {
+export async function GET(request: Request) {
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
 
     const [{ data: services, error: servicesError }, { data: settings, error: settingsError }] = await Promise.all([
       supabaseAdmin
         .from("services")
-        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value")
+        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order")
         .eq("site_slug", siteSlug)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
       supabaseAdmin
         .from("site_settings")
