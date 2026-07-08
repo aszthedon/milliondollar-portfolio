@@ -123,7 +123,7 @@ export async function GET(request: Request) {
   }
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
 
     const [{ data: site, error: siteError }, { data: settings, error }] =
       await Promise.all([
@@ -175,7 +175,7 @@ export async function POST(request: Request) {
   }
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
 
     const { data: existing } = await supabaseAdmin
