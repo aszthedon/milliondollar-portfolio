@@ -14,20 +14,49 @@ function normalizeSiteSlug(value: string | undefined | null) {
   return cleanValue || defaultSiteSlug;
 }
 
-function resolveSiteSlugFromHostname(hostname: string | undefined | null) {
-  const cleanHostname = String(hostname ?? "")
+function cleanHostname(value: string | undefined | null) {
+  return String(value ?? "")
     .trim()
     .toLowerCase()
+    .replace(/^https?:\/\//, "")
+    .split("/")[0]
+    .split(":")[0]
     .replace(/^www\./, "");
+}
 
-  if (!cleanHostname) {
+function resolveSiteSlugFromHostname(hostname: string | undefined | null) {
+  const hostnameValue = cleanHostname(hostname);
+
+  if (!hostnameValue) {
     return "";
   }
 
-  return domainSiteSlugMap[cleanHostname] || domainSiteSlugMap[`www.${cleanHostname}`] || "";
+  return (
+    domainSiteSlugMap[hostnameValue] ||
+    domainSiteSlugMap[`www.${hostnameValue}`] ||
+    ""
+  );
 }
 
-export function getServerSiteSlug() {
+function getRequestHostname(request: Request | undefined) {
+  if (!request) {
+    return "";
+  }
+
+  return (
+    request.headers.get("x-forwarded-host") ||
+    request.headers.get("host") ||
+    ""
+  );
+}
+
+export function getServerSiteSlug(request?: Request) {
+  const requestSlug = resolveSiteSlugFromHostname(getRequestHostname(request));
+
+  if (requestSlug) {
+    return normalizeSiteSlug(requestSlug);
+  }
+
   return normalizeSiteSlug(
     process.env.SITE_SLUG || process.env.NEXT_PUBLIC_SITE_SLUG
   );
