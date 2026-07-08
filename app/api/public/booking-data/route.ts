@@ -62,7 +62,7 @@ export async function GET(request: Request) {
         .eq("is_enabled", true),
       supabaseAdmin
         .from("deposit_rules")
-        .select("id,name,rule_scope,service_id,service_variation_id,client_email,payment_mode,deposit_type,deposit_value,min_total,max_total,priority,is_active")
+        .select("id,name,rule_scope,price_basis,service_id,service_variation_id,client_email,payment_mode,deposit_type,deposit_value,min_total,max_total,priority,is_active")
         .eq("site_slug", siteSlug)
         .eq("is_active", true)
         .order("priority", { ascending: true }),
