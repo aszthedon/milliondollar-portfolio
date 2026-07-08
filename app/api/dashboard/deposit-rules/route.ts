@@ -21,6 +21,11 @@ function cleanBoolean(value: unknown, fallback: boolean) {
   return typeof value === "boolean" ? value : fallback;
 }
 
+function cleanPriceBasis(value: unknown) {
+  const basis = cleanText(value).toLowerCase();
+  return basis === "total" ? "total" : "service";
+}
+
 function buildPayload(body: Body) {
   const name = cleanText(body.name);
 
@@ -30,7 +35,8 @@ function buildPayload(body: Body) {
 
   return {
     name,
-    rule_scope: cleanText(body.rule_scope) || "site",
+    rule_scope: cleanText(body.rule_scope) || "price_tier",
+    price_basis: cleanPriceBasis(body.price_basis),
     service_id: cleanNumber(body.service_id) || null,
     service_variation_id: cleanNumber(body.service_variation_id) || null,
     client_email: cleanText(body.client_email).toLowerCase() || null,
