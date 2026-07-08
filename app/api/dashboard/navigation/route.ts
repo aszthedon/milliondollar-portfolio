@@ -44,7 +44,7 @@ export async function GET(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const [{ data: links, error: linksError }, { data: settings, error: settingsError }] = await Promise.all([
       supabaseAdmin
         .from("navigation_links")
@@ -74,7 +74,7 @@ export async function POST(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
     const payload = buildLinkPayload(body);
 
@@ -98,7 +98,7 @@ export async function PUT(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
     const linkId = cleanNumber(body.id);
 
@@ -127,7 +127,7 @@ export async function PATCH(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
     const brandText = cleanText(body.navbar_brand_text);
     const now = new Date().toISOString();
@@ -174,7 +174,7 @@ export async function DELETE(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const url = new URL(request.url);
     const linkId = cleanNumber(url.searchParams.get("id"));
 
