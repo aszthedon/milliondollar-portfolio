@@ -29,8 +29,9 @@ export async function GET(request: Request) {
     ] = await Promise.all([
       supabaseAdmin
         .from("services")
-        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value")
+        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order")
         .eq("site_slug", siteSlug)
+        .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
       supabaseAdmin
         .from("service_variations")
