@@ -40,6 +40,20 @@ function safeSettings(settings: Record<string, unknown> | null) {
     theme_mode: theme.mode ?? "dark",
     theme_style: theme.style ?? "premium",
     custom_css: settings?.custom_css ?? "",
+    homepage_layout_settings: settings?.homepage_layout_settings ?? {},
+    home_eyebrow: settings?.home_eyebrow ?? "Book Now",
+    hero_heading: settings?.hero_heading ?? "",
+    hero_description: settings?.hero_description ?? "",
+    home_services_heading: settings?.home_services_heading ?? "Services",
+    home_services_description: settings?.home_services_description ?? "",
+    home_booking_heading: settings?.home_booking_heading ?? "Reserve Your Spot",
+    home_booking_description: settings?.home_booking_description ?? "",
+    home_gallery_heading: settings?.home_gallery_heading ?? "Gallery",
+    home_gallery_description: settings?.home_gallery_description ?? "",
+    home_contact_heading: settings?.home_contact_heading ?? settings?.contact_heading ?? "Contact",
+    home_contact_description: settings?.home_contact_description ?? settings?.contact_description ?? "",
+    cta_heading: settings?.cta_heading ?? "",
+    cta_description: settings?.cta_description ?? "",
   };
 }
 
@@ -55,10 +69,7 @@ export async function GET(request: Request) {
 
     if (error) throw error;
 
-    return NextResponse.json({
-      site_slug: siteSlug,
-      settings: safeSettings((data ?? {}) as Record<string, unknown>),
-    });
+    return NextResponse.json({ site_slug: siteSlug, settings: safeSettings((data ?? {}) as Record<string, unknown>) });
   } catch (error) {
     console.error("PUBLIC SITE SETTINGS ERROR:", error);
     return NextResponse.json({ error: "Site settings could not be loaded." }, { status: 500 });
