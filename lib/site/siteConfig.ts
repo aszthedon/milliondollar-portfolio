@@ -5,7 +5,7 @@ const domainSiteSlugMap: Record<string, string> = {
   "www.iyanlafixmycrown.com": "fix-my-crown",
 };
 
-function normalizeSiteSlug(value: string | undefined | null) {
+export function normalizeSiteSlug(value: string | undefined | null) {
   const cleanValue = String(value ?? "")
     .trim()
     .toLowerCase()
@@ -14,7 +14,7 @@ function normalizeSiteSlug(value: string | undefined | null) {
   return cleanValue || defaultSiteSlug;
 }
 
-function cleanHostname(value: string | undefined | null) {
+export function cleanHostname(value: string | undefined | null) {
   return String(value ?? "")
     .trim()
     .toLowerCase()
@@ -24,68 +24,46 @@ function cleanHostname(value: string | undefined | null) {
     .replace(/^www\./, "");
 }
 
-function resolveSiteSlugFromHostname(hostname: string | undefined | null) {
+export function getSiteSlugFromHostname(hostname: string | undefined | null) {
   const hostnameValue = cleanHostname(hostname);
 
-  if (!hostnameValue) {
-    return "";
-  }
+  if (!hostnameValue) return "";
 
-  return (
-    domainSiteSlugMap[hostnameValue] ||
-    domainSiteSlugMap[`www.${hostnameValue}`] ||
-    ""
-  );
+  return domainSiteSlugMap[hostnameValue] || domainSiteSlugMap[`www.${hostnameValue}`] || "";
+}
+
+export function getSiteSlugFromHost(hostname: string | undefined | null) {
+  return normalizeSiteSlug(getSiteSlugFromHostname(hostname) || process.env.SITE_SLUG || process.env.NEXT_PUBLIC_SITE_SLUG);
 }
 
 function getRequestHostname(request: Request | undefined) {
-  if (!request) {
-    return "";
-  }
+  if (!request) return "";
 
-  return (
-    request.headers.get("x-forwarded-host") ||
-    request.headers.get("host") ||
-    ""
-  );
+  return request.headers.get("x-forwarded-host") || request.headers.get("host") || "";
 }
 
 export function getServerSiteSlug(request?: Request) {
-  const requestSlug = resolveSiteSlugFromHostname(getRequestHostname(request));
+  const requestSlug = getSiteSlugFromHostname(getRequestHostname(request));
 
-  if (requestSlug) {
-    return normalizeSiteSlug(requestSlug);
-  }
+  if (requestSlug) return normalizeSiteSlug(requestSlug);
 
-  return normalizeSiteSlug(
-    process.env.SITE_SLUG || process.env.NEXT_PUBLIC_SITE_SLUG
-  );
+  return normalizeSiteSlug(process.env.SITE_SLUG || process.env.NEXT_PUBLIC_SITE_SLUG);
 }
 
 export function getClientSiteSlug() {
   if (typeof window !== "undefined") {
-    const hostnameSlug = resolveSiteSlugFromHostname(window.location.hostname);
+    const hostnameSlug = getSiteSlugFromHostname(window.location.hostname);
 
-    if (hostnameSlug) {
-      return normalizeSiteSlug(hostnameSlug);
-    }
+    if (hostnameSlug) return normalizeSiteSlug(hostnameSlug);
   }
 
   return normalizeSiteSlug(process.env.NEXT_PUBLIC_SITE_SLUG);
 }
 
 export function getSiteName() {
-  return (
-    process.env.NEXT_PUBLIC_SITE_NAME ||
-    process.env.SITE_NAME ||
-    "Million Dollar Ticket Productions"
-  );
+  return process.env.NEXT_PUBLIC_SITE_NAME || process.env.SITE_NAME || "Million Dollar Ticket Productions";
 }
 
 export function getSiteUrlFallback() {
-  return (
-    process.env.NEXT_PUBLIC_SITE_URL ||
-    process.env.SITE_URL ||
-    "http://localhost:3000"
-  ).replace(/\/$/, "");
+  return (process.env.NEXT_PUBLIC_SITE_URL || process.env.SITE_URL || "http://localhost:3000").replace(/\/$/, "");
 }
