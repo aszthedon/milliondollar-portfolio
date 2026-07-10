@@ -5,41 +5,46 @@ import Link from "next/link";
 
 import Container from "@/components/Container";
 import { getClientSiteSlug } from "@/lib/site/siteConfig";
-import { supabase } from "@/lib/supabase";
 
 interface FooterSettings {
-  footer_brand_text: string | null;
-  footer_description: string | null;
-  footer_email: string | null;
-  footer_phone: string | null;
-  footer_address: string | null;
-  footer_instagram_url: string | null;
-  footer_facebook_url: string | null;
-  footer_tiktok_url: string | null;
-  footer_youtube_url: string | null;
-  footer_copyright_text: string | null;
-  show_footer: boolean | null;
-  show_policies_link: boolean | null;
+  business_name: string;
+  footer_brand_text: string;
+  footer_description: string;
+  footer_email: string;
+  footer_phone: string;
+  footer_address: string;
+  footer_instagram_url: string;
+  footer_facebook_url: string;
+  footer_tiktok_url: string;
+  footer_youtube_url: string;
+  footer_copyright_text: string;
+  show_footer: boolean;
+  show_policies_link: boolean;
+  primary_color: string;
+  secondary_color: string;
 }
 
 const fallbackFooter: FooterSettings = {
-  footer_brand_text: "Million Dollar Ticket Productions",
-  footer_description: "A polished booking website template built for service brands, creatives, and entrepreneurs.",
-  footer_email: null,
-  footer_phone: null,
-  footer_address: null,
-  footer_instagram_url: null,
-  footer_facebook_url: null,
-  footer_tiktok_url: null,
-  footer_youtube_url: null,
-  footer_copyright_text: "© 2026 Million Dollar Ticket Productions. All rights reserved.",
+  business_name: "",
+  footer_brand_text: "Iyanla Fix My Crown",
+  footer_description: "Professional hairstyling, crown care, and confidence-centered beauty services.",
+  footer_email: "",
+  footer_phone: "",
+  footer_address: "",
+  footer_instagram_url: "",
+  footer_facebook_url: "",
+  footer_tiktok_url: "",
+  footer_youtube_url: "",
+  footer_copyright_text: "© 2026 Iyanla Fix My Crown. All rights reserved.",
   show_footer: true,
   show_policies_link: true,
+  primary_color: "#ffffff",
+  secondary_color: "#a1a1aa",
 };
 
-function SocialLink({ href, label }: { href: string | null; label: string }) {
+function SocialLink({ href, label, color }: { href: string; label: string; color: string }) {
   if (!href) return null;
-  return <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm text-zinc-400 transition hover:text-white">{label}</a>;
+  return <a href={href} target="_blank" rel="noopener noreferrer" className="text-sm transition hover:opacity-80" style={{ color }}>{label}</a>;
 }
 
 export default function Footer() {
@@ -49,36 +54,18 @@ export default function Footer() {
 
   useEffect(() => {
     async function fetchFooter() {
-      const { data, error } = await supabase
-        .from("site_settings")
-        .select("footer_brand_text,footer_description,footer_email,footer_phone,footer_address,footer_instagram_url,footer_facebook_url,footer_tiktok_url,footer_youtube_url,footer_copyright_text,show_footer,show_policies_link")
-        .eq("site_slug", siteSlug)
-        .maybeSingle();
+      try {
+        const response = await fetch("/api/public/site-settings", { cache: "no-store" });
+        const data = await response.json().catch(() => ({}));
 
-      if (error) {
-        console.error("PUBLIC FOOTER ERROR:", error);
+        if (data?.settings) {
+          setSettings({ ...fallbackFooter, ...data.settings });
+        }
+      } catch (error) {
+        console.error("PUBLIC FOOTER SETTINGS ERROR:", error);
+      } finally {
         setLoading(false);
-        return;
       }
-
-      if (data) {
-        setSettings({
-          footer_brand_text: data.footer_brand_text || fallbackFooter.footer_brand_text,
-          footer_description: data.footer_description || fallbackFooter.footer_description,
-          footer_email: data.footer_email,
-          footer_phone: data.footer_phone,
-          footer_address: data.footer_address,
-          footer_instagram_url: data.footer_instagram_url,
-          footer_facebook_url: data.footer_facebook_url,
-          footer_tiktok_url: data.footer_tiktok_url,
-          footer_youtube_url: data.footer_youtube_url,
-          footer_copyright_text: data.footer_copyright_text || fallbackFooter.footer_copyright_text,
-          show_footer: data.show_footer ?? true,
-          show_policies_link: data.show_policies_link ?? true,
-        });
-      }
-
-      setLoading(false);
     }
 
     fetchFooter();
@@ -86,23 +73,29 @@ export default function Footer() {
 
   if (!loading && settings.show_footer === false) return null;
 
+  const primaryColor = settings.primary_color || "#ffffff";
+  const secondaryColor = settings.secondary_color || "#a1a1aa";
+  const brandText = settings.footer_brand_text || settings.business_name || fallbackFooter.footer_brand_text;
+  const description = settings.footer_description || fallbackFooter.footer_description;
+  const copyright = settings.footer_copyright_text || `© 2026 ${brandText}. All rights reserved.`;
+
   return (
-    <footer className="border-t border-white/10 py-12">
+    <footer className="border-t py-12" style={{ borderColor: `${primaryColor}33` }}>
       <Container>
         <div className="grid gap-10 md:grid-cols-[1.2fr_0.8fr_0.8fr]">
           <div>
-            <Link href="/" className="text-xl font-bold text-white">{settings.footer_brand_text}</Link>
-            <p className="mt-4 max-w-xl leading-relaxed text-zinc-400">{settings.footer_description}</p>
+            <Link href="/" className="text-xl font-bold" style={{ color: primaryColor }}>{brandText}</Link>
+            <p className="mt-4 max-w-xl leading-relaxed" style={{ color: secondaryColor }}>{description}</p>
             {settings.show_policies_link !== false && (
-              <Link href="/policies" className="mt-4 inline-block text-sm text-zinc-400 transition hover:text-white">
+              <Link href="/policies" className="mt-4 inline-block text-sm transition hover:opacity-80" style={{ color: primaryColor }}>
                 Policies
               </Link>
             )}
           </div>
 
           <div>
-            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">Contact</h3>
-            <div className="mt-4 grid gap-2 text-sm text-zinc-400">
+            <h3 className="text-sm uppercase tracking-[0.25em]" style={{ color: secondaryColor }}>Contact</h3>
+            <div className="mt-4 grid gap-2 text-sm" style={{ color: secondaryColor }}>
               {settings.footer_email && <p>{settings.footer_email}</p>}
               {settings.footer_phone && <p>{settings.footer_phone}</p>}
               {settings.footer_address && <p>{settings.footer_address}</p>}
@@ -110,17 +103,17 @@ export default function Footer() {
           </div>
 
           <div>
-            <h3 className="text-sm uppercase tracking-[0.25em] text-zinc-500">Social</h3>
+            <h3 className="text-sm uppercase tracking-[0.25em]" style={{ color: secondaryColor }}>Social</h3>
             <div className="mt-4 flex flex-wrap gap-4">
-              <SocialLink href={settings.footer_instagram_url} label="Instagram" />
-              <SocialLink href={settings.footer_facebook_url} label="Facebook" />
-              <SocialLink href={settings.footer_tiktok_url} label="TikTok" />
-              <SocialLink href={settings.footer_youtube_url} label="YouTube" />
+              <SocialLink href={settings.footer_instagram_url} label="Instagram" color={secondaryColor} />
+              <SocialLink href={settings.footer_facebook_url} label="Facebook" color={secondaryColor} />
+              <SocialLink href={settings.footer_tiktok_url} label="TikTok" color={secondaryColor} />
+              <SocialLink href={settings.footer_youtube_url} label="YouTube" color={secondaryColor} />
             </div>
           </div>
         </div>
 
-        <div className="mt-10 border-t border-white/10 pt-6 text-sm text-zinc-500">{settings.footer_copyright_text}</div>
+        <div className="mt-10 border-t pt-6 text-sm" style={{ borderColor: `${primaryColor}33`, color: secondaryColor }}>{copyright}</div>
       </Container>
     </footer>
   );
