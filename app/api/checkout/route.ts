@@ -26,46 +26,20 @@ type DepositRule = {
 function getSiteUrl(request: Request) {
   return (process.env.NEXT_PUBLIC_SITE_URL ?? request.headers.get("origin") ?? "http://localhost:3000").replace(/\/$/, "");
 }
-
-function timeToMinutes(time: string) {
-  const [hourString, minuteString] = time.split(":");
-  return Number(hourString) * 60 + Number(minuteString ?? "0");
-}
-
-function minutesToTime(minutes: number) {
-  const hours = Math.floor(minutes / 60) % 24;
-  const mins = minutes % 60;
-  return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`;
-}
-
-function addMinutesToTime(time: string, minutesToAdd: number) {
-  return minutesToTime(timeToMinutes(time) + minutesToAdd);
-}
-
-function isCancelledStatus(status: string | null) {
-  return status === "cancelled" || status === "rejected";
-}
-
-function roundMoney(value: number) {
-  return Math.round(value * 100) / 100;
-}
-
-function calculateDiscountAmount({ originalPrice, discountType, discountValue }: { originalPrice: number; discountType: string; discountValue: number }) {
-  if (discountType === "amount") return Math.min(discountValue, originalPrice);
-  return Math.min((originalPrice * discountValue) / 100, originalPrice);
-}
-
-function calculateDepositBaseAmount({ discountedPrice, paymentMode, depositType, depositValue }: { discountedPrice: number; paymentMode: string; depositType: string; depositValue: number }) {
-  if (paymentMode !== "deposit") return discountedPrice;
+function timeToMinutes(time: string) { const [h, m] = time.split(":"); return Number(h) * 60 + Number(m ?? "0"); }
+function minutesToTime(minutes: number) { const hours = Math.floor(minutes / 60) % 24; const mins = minutes % 60; return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`; }
+function addMinutesToTime(time: string, minutesToAdd: number) { return minutesToTime(timeToMinutes(time) + minutesToAdd); }
+function isCancelledStatus(status: string | null) { return status === "cancelled" || status === "rejected"; }
+function roundMoney(value: number) { return Math.round(value * 100) / 100; }
+function normalizePaymentMode(value: unknown) { const mode = String(value ?? "").trim(); return mode === "pay_later" || mode === "deposit" || mode === "full" ? mode : "pay_later"; }
+function calculateDiscountAmount({ originalPrice, discountType, discountValue }: { originalPrice: number; discountType: string; discountValue: number }) { return discountType === "amount" ? Math.min(discountValue, originalPrice) : Math.min((originalPrice * discountValue) / 100, originalPrice); }
+function calculateAmountDueNow({ discountedPrice, paymentMode, depositType, depositValue }: { discountedPrice: number; paymentMode: string; depositType: string; depositValue: number }) {
+  if (paymentMode === "pay_later") return 0;
+  if (paymentMode === "full") return discountedPrice;
   if (depositType === "amount") return Math.min(depositValue, discountedPrice);
   return Math.min((discountedPrice * depositValue) / 100, discountedPrice);
 }
-
-function normalizeAddonIds(value: unknown) {
-  if (!Array.isArray(value)) return [];
-  return Array.from(new Set(value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0)));
-}
-
+function normalizeAddonIds(value: unknown) { if (!Array.isArray(value)) return []; return Array.from(new Set(value.map((item) => Number(item)).filter((item) => Number.isFinite(item) && item > 0))); }
 function ruleMatches(rule: DepositRule, context: { serviceId: number | null; variationId: number | null; email: string; servicePrice: number; total: number }) {
   const scope = rule.rule_scope ?? "site";
   const priceBasis = rule.price_basis === "total" ? "total" : "service";
@@ -83,7 +57,6 @@ function ruleMatches(rule: DepositRule, context: { serviceId: number | null; var
   if (scope === "total" || scope === "price_tier") return minTotal !== null || maxTotal !== null;
   return true;
 }
-
 async function upsertCrmClient(customerEmail: string, siteSlug: string) {
   const cleanEmail = customerEmail.trim().toLowerCase();
   if (!cleanEmail) return null;
@@ -106,7 +79,6 @@ export async function POST(request: Request) {
     const serviceId = service_id ? Number(service_id) : null;
     const variationId = variation_id ? Number(variation_id) : null;
     const cleanCustomerEmail = typeof customer_email === "string" ? customer_email.trim().toLowerCase() : "";
-
     if (!service_name || !cleanCustomerEmail || !booking_date || !booking_time || !timezone || !Number.isFinite(numericPrice) || numericPrice <= 0) return NextResponse.json({ error: "Missing required checkout information." }, { status: 400 });
     if (!serviceId) return NextResponse.json({ error: "A service is required." }, { status: 400 });
 
@@ -134,39 +106,21 @@ export async function POST(request: Request) {
 
     const { data: availabilityWindows, error: availabilityError } = await supabaseAdmin.from("availability").select("id,available_date,available_time,start_time,end_time,timezone").eq("site_slug", siteSlug).eq("available_date", booking_date);
     if (availabilityError) return NextResponse.json({ error: "Availability could not be checked." }, { status: 500 });
-    const fitsAvailability = (availabilityWindows ?? []).some((window) => {
-      const windowStart = window.start_time ?? window.available_time;
-      const windowEnd = window.end_time;
-      if (!windowStart || !windowEnd) return false;
-      return requestedStart >= timeToMinutes(windowStart) && requestedEnd <= timeToMinutes(windowEnd);
-    });
+    const fitsAvailability = (availabilityWindows ?? []).some((window) => { const windowStart = window.start_time ?? window.available_time; const windowEnd = window.end_time; if (!windowStart || !windowEnd) return false; return requestedStart >= timeToMinutes(windowStart) && requestedEnd <= timeToMinutes(windowEnd); });
     if (!fitsAvailability) return NextResponse.json({ error: "This time is no longer available." }, { status: 409 });
 
     const { data: existingBookings, error: existingBookingsError } = await supabaseAdmin.from("bookings").select("id,booking_time,booking_end_time,status").eq("site_slug", siteSlug).eq("booking_date", booking_date);
     if (existingBookingsError) return NextResponse.json({ error: "Existing bookings could not be checked." }, { status: 500 });
-    const hasConflict = (existingBookings ?? []).some((booking) => {
-      if (isCancelledStatus(booking.status)) return false;
-      if (!booking.booking_time || !booking.booking_end_time) return false;
-      return requestedStart < timeToMinutes(booking.booking_end_time) && requestedEnd > timeToMinutes(booking.booking_time);
-    });
+    const hasConflict = (existingBookings ?? []).some((booking) => { if (isCancelledStatus(booking.status)) return false; if (!booking.booking_time || !booking.booking_end_time) return false; return requestedStart < timeToMinutes(booking.booking_end_time) && requestedEnd > timeToMinutes(booking.booking_time); });
     if (hasConflict) return NextResponse.json({ error: "This time overlaps with an existing booking." }, { status: 409 });
 
-    let paymentMode = "full";
-    let depositType = "percent";
+    let paymentMode = "pay_later";
+    let depositType = "amount";
     let depositValue = 0;
-    const { data: depositRules, error: depositRulesError } = await supabaseAdmin
-      .from("deposit_rules")
-      .select("id,rule_scope,price_basis,service_id,service_variation_id,client_email,payment_mode,deposit_type,deposit_value,min_total,max_total,priority")
-      .eq("site_slug", siteSlug)
-      .eq("is_active", true)
-      .order("priority", { ascending: true });
+    const { data: depositRules, error: depositRulesError } = await supabaseAdmin.from("deposit_rules").select("id,rule_scope,price_basis,service_id,service_variation_id,client_email,payment_mode,deposit_type,deposit_value,min_total,max_total,priority").eq("site_slug", siteSlug).eq("is_active", true).order("priority", { ascending: true });
     if (depositRulesError) console.error("DEPOSIT RULES ERROR:", depositRulesError);
     const matchedDepositRule = (depositRules ?? []).find((rule) => ruleMatches(rule as DepositRule, { serviceId, variationId, email: cleanCustomerEmail, servicePrice, total: totalBeforeDiscount })) as DepositRule | undefined;
-    if (matchedDepositRule) {
-      paymentMode = matchedDepositRule.payment_mode ?? "deposit";
-      depositType = matchedDepositRule.deposit_type ?? "amount";
-      depositValue = Number(matchedDepositRule.deposit_value ?? 0);
-    }
+    if (matchedDepositRule) { paymentMode = normalizePaymentMode(matchedDepositRule.payment_mode); depositType = matchedDepositRule.deposit_type ?? "amount"; depositValue = Number(matchedDepositRule.deposit_value ?? 0); }
 
     const cleanDiscountCode = typeof discount_code === "string" ? discount_code.trim().toUpperCase() : "";
     let appliedDiscountCode = "";
@@ -185,25 +139,23 @@ export async function POST(request: Request) {
 
     const discountedPrice = roundMoney(Math.max(totalBeforeDiscount - discountAmount, 0));
     const tipAmount = roundMoney(numericTipAmount);
-    const depositBaseAmount = roundMoney(calculateDepositBaseAmount({ discountedPrice, paymentMode, depositType, depositValue }));
+    const depositBaseAmount = roundMoney(calculateAmountDueNow({ discountedPrice, paymentMode, depositType, depositValue }));
     const amountDueNow = roundMoney(depositBaseAmount + tipAmount);
     const depositAmount = paymentMode === "deposit" ? depositBaseAmount : 0;
-    const remainingBalance = paymentMode === "deposit" ? roundMoney(Math.max(discountedPrice - depositBaseAmount, 0)) : 0;
-    if (amountDueNow <= 0) return NextResponse.json({ error: "Checkout amount must be greater than $0." }, { status: 400 });
-
+    const remainingBalance = paymentMode === "pay_later" ? discountedPrice : paymentMode === "deposit" ? roundMoney(Math.max(discountedPrice - depositBaseAmount, 0)) : 0;
     const balanceStatus = remainingBalance > 0 ? "balance_due" : "not_applicable";
+    const paymentStatus = paymentMode === "pay_later" ? "pay_later" : "pending";
     const cleanNotes = typeof notes === "string" ? notes.trim() : "";
-    const normalizedNotes = [cleanNotes, variationId ? `Variation ID: ${variationId}` : "", addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", matchedDepositRule ? `Deposit Rule ID: ${matchedDepositRule.id}` : "", matchedDepositRule ? `Deposit Price Basis: ${matchedDepositRule.price_basis ?? "service"}` : "", !matchedDepositRule ? "No deposit rule matched; full payment charged." : "", appliedDiscountCode ? `Discount Code: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip Added: $${tipAmount.toFixed(2)}` : "", paymentMode === "deposit" ? `Deposit paid upfront. Remaining balance due after appointment: $${remainingBalance.toFixed(2)}` : ""].filter(Boolean).join("\n");
-    const { data: booking, error: bookingError } = await supabaseAdmin.from("bookings").insert({ site_slug: siteSlug, client_id: client_id || null, crm_client_id: crmClientId, service_id: serviceId, customer_email: cleanCustomerEmail, booking_date, booking_time, booking_end_time: bookingEndTime, payment_status: "pending", status: "pending", notes: normalizedNotes, timezone, price_paid: amountDueNow, original_price: totalBeforeDiscount, discount_code: appliedDiscountCode || null, discount_amount: discountAmount, amount_due_now: amountDueNow, remaining_balance: remainingBalance, payment_mode: paymentMode, deposit_amount: depositAmount, tip_amount: tipAmount, balance_status: balanceStatus, addon_ids: selectedAddonIds, addon_total: addonTotal, deposit_rule_id: matchedDepositRule?.id ?? null, calculated_deposit: depositAmount }).select().single();
+    const normalizedNotes = [cleanNotes, variationId ? `Variation ID: ${variationId}` : "", addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", matchedDepositRule ? `Payment Rule ID: ${matchedDepositRule.id}` : "", matchedDepositRule ? `Payment Rule Mode: ${paymentMode}` : "No payment rule matched; book now/pay later applied.", appliedDiscountCode ? `Discount Code: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip Added: $${tipAmount.toFixed(2)}` : "", paymentMode === "pay_later" ? `Pay later booking. Balance due after appointment: $${remainingBalance.toFixed(2)}` : "", paymentMode === "deposit" ? `Deposit paid upfront. Remaining balance due after appointment: $${remainingBalance.toFixed(2)}` : ""].filter(Boolean).join("\n");
+    const { data: booking, error: bookingError } = await supabaseAdmin.from("bookings").insert({ site_slug: siteSlug, client_id: client_id || null, crm_client_id: crmClientId, service_id: serviceId, customer_email: cleanCustomerEmail, booking_date, booking_time, booking_end_time: bookingEndTime, payment_status: paymentStatus, status: "pending", notes: normalizedNotes, timezone, price_paid: amountDueNow, original_price: totalBeforeDiscount, discount_code: appliedDiscountCode || null, discount_amount: discountAmount, amount_due_now: amountDueNow, remaining_balance: remainingBalance, payment_mode: paymentMode, deposit_amount: depositAmount, tip_amount: tipAmount, balance_status: balanceStatus, addon_ids: selectedAddonIds, addon_total: addonTotal, deposit_rule_id: matchedDepositRule?.id ?? null, calculated_deposit: depositAmount }).select().single();
     if (bookingError || !booking) return NextResponse.json({ error: "Booking creation failed." }, { status: 500 });
 
     const siteUrl = getSiteUrl(request);
+    if (paymentMode === "pay_later" && amountDueNow <= 0) return NextResponse.json({ url: `${siteUrl}/success?bookingId=${booking.id}&payment=pay_later` });
+    if (amountDueNow <= 0) return NextResponse.json({ error: "Checkout amount must be greater than $0." }, { status: 400 });
     const checkoutLabel = paymentMode === "deposit" ? `${service_name} Deposit` : service_name;
-    const descriptionParts = [addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", paymentMode === "deposit" ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}` : "", !matchedDepositRule ? "No deposit rule matched; full payment due." : "", appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : ""].filter(Boolean);
+    const descriptionParts = [addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", paymentMode === "deposit" ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}` : "", paymentMode === "full" ? "Full payment due now." : "", appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : ""].filter(Boolean);
     const session = await stripe.checkout.sessions.create({ mode: "payment", customer_email: cleanCustomerEmail, payment_method_types: ["card"], line_items: [{ price_data: { currency: "usd", product_data: { name: checkoutLabel, description: descriptionParts.length > 0 ? descriptionParts.join(" · ") : undefined }, unit_amount: Math.round(amountDueNow * 100) }, quantity: 1 }], metadata: { siteSlug, bookingId: booking.id.toString(), crmClientId: crmClientId ? String(crmClientId) : "", serviceId: serviceId ? serviceId.toString() : "", variationId: variationId ? variationId.toString() : "", addonIds: selectedAddonIds.join(","), depositRuleId: matchedDepositRule?.id ? String(matchedDepositRule.id) : "", depositPriceBasis: matchedDepositRule?.price_basis ?? "none", bookingDate: booking_date, bookingTime: booking_time, bookingEndTime, servicePrice: servicePrice.toFixed(2), originalPrice: totalBeforeDiscount.toFixed(2), addonTotal: addonTotal.toFixed(2), discountCode: appliedDiscountCode, discountAmount: discountAmount.toFixed(2), depositBaseAmount: depositBaseAmount.toFixed(2), amountDueNow: amountDueNow.toFixed(2), remainingBalance: remainingBalance.toFixed(2), tipAmount: tipAmount.toFixed(2), paymentMode }, success_url: `${siteUrl}/success?bookingId=${booking.id}`, cancel_url: `${siteUrl}/cancel?bookingId=${booking.id}` });
     return NextResponse.json({ url: session.url });
-  } catch (error) {
-    console.error("CHECKOUT ERROR:", error);
-    return NextResponse.json({ error: "Checkout failed." }, { status: 500 });
-  }
+  } catch (error) { console.error("CHECKOUT ERROR:", error); return NextResponse.json({ error: "Checkout failed." }, { status: 500 }); }
 }
