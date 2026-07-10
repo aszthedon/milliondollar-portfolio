@@ -4,15 +4,24 @@
 :root {
   --background: #000000;
   --foreground: #ffffff;
+  --site-primary-color: #ffffff;
+  --site-secondary-color: #a1a1aa;
+  --site-accent-color: #ffffff;
+  --site-background-color: #000000;
+  --site-foreground-color: #ffffff;
+  --site-surface-color: color-mix(in srgb, var(--site-background-color) 88%, var(--site-foreground-color) 12%);
+  --site-card-color: color-mix(in srgb, var(--site-background-color) 82%, var(--site-foreground-color) 18%);
+  --site-border-color: color-mix(in srgb, var(--site-primary-color) 28%, transparent);
 }
 
 html {
   scroll-behavior: smooth;
+  background: var(--site-background-color);
 }
 
 body {
-  background: var(--background);
-  color: var(--foreground);
+  background: var(--site-background-color);
+  color: var(--site-foreground-color);
   font-family: Arial, Helvetica, sans-serif;
   overflow-x: hidden;
 }
@@ -28,6 +37,82 @@ h4,
 h5,
 h6 {
   letter-spacing: -0.03em;
+  color: var(--site-foreground-color);
+}
+
+/* Public theme bridge: makes dashboard colors affect hardcoded Tailwind sections */
+body section.bg-black,
+body main.bg-black,
+body div.bg-black,
+body footer.bg-black,
+body nav.bg-black,
+body .bg-black {
+  background-color: var(--site-background-color) !important;
+}
+
+body .bg-black\/80 {
+  background-color: color-mix(in srgb, var(--site-background-color) 82%, transparent) !important;
+}
+
+body .bg-white\/5,
+body .bg-black\/40,
+body .bg-white\/10 {
+  background-color: var(--site-surface-color) !important;
+}
+
+body .border-white\/10,
+body .border-white\/20,
+body .border-white\/30 {
+  border-color: var(--site-border-color) !important;
+}
+
+body .text-white {
+  color: var(--site-foreground-color) !important;
+}
+
+body .text-zinc-300,
+body .text-zinc-400,
+body .text-zinc-500,
+body .text-zinc-600,
+body .text-zinc-700 {
+  color: var(--site-secondary-color) !important;
+}
+
+body .bg-white {
+  background-color: var(--site-primary-color) !important;
+}
+
+body .text-black {
+  color: var(--site-background-color) !important;
+}
+
+body a:hover,
+body button:hover {
+  border-color: var(--site-primary-color);
+}
+
+.site-primary-bg {
+  background-color: var(--site-primary-color) !important;
+}
+
+.site-primary-text {
+  color: var(--site-primary-color) !important;
+}
+
+.site-secondary-text {
+  color: var(--site-secondary-color) !important;
+}
+
+.site-background-bg {
+  background-color: var(--site-background-color) !important;
+}
+
+.site-foreground-text {
+  color: var(--site-foreground-color) !important;
+}
+
+.site-primary-border {
+  border-color: var(--site-border-color) !important;
 }
 
 /* REACT CALENDAR CUSTOM STYLES */
@@ -36,46 +121,46 @@ h6 {
   width: 100%;
   border: none !important;
   background: transparent !important;
-  color: white;
+  color: var(--site-foreground-color);
   font-family: inherit;
 }
 
 .react-calendar__navigation button {
-  color: white;
+  color: var(--site-foreground-color);
   min-width: 44px;
   background: transparent;
   font-size: 1rem;
 }
 
 .react-calendar__navigation button:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--site-surface-color) !important;
 }
 
 .react-calendar__month-view__weekdays {
   text-transform: uppercase;
   font-size: 0.75rem;
-  color: #a1a1aa;
+  color: var(--site-secondary-color);
 }
 
 .react-calendar__tile {
   background: transparent;
-  color: white;
+  color: var(--site-foreground-color);
   border-radius: 1rem;
   padding: 1rem 0.5rem;
   transition: all 0.2s ease;
 }
 
 .react-calendar__tile:hover {
-  background: rgba(255, 255, 255, 0.1) !important;
+  background: var(--site-surface-color) !important;
 }
 
 .react-calendar__tile--active {
-  background: white !important;
-  color: black !important;
+  background: var(--site-primary-color) !important;
+  color: var(--site-background-color) !important;
 }
 
 .react-calendar__tile--now {
-  background: rgba(168, 85, 247, 0.25) !important;
+  background: color-mix(in srgb, var(--site-accent-color) 25%, transparent) !important;
 }
 
 .react-calendar__tile:disabled {
@@ -83,5 +168,5 @@ h6 {
 }
 
 .react-calendar__month-view__days__day--weekend {
-  color: #f4f4f5;
+  color: var(--site-foreground-color);
 }
