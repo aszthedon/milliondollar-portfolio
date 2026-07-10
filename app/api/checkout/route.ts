@@ -72,7 +72,6 @@ function ruleMatches(rule: DepositRule, context: { serviceId: number | null; var
   const comparisonPrice = priceBasis === "total" ? context.total : context.servicePrice;
   const minTotal = rule.min_total === null || rule.min_total === undefined ? null : Number(rule.min_total);
   const maxTotal = rule.max_total === null || rule.max_total === undefined ? null : Number(rule.max_total);
-
   if (minTotal !== null && comparisonPrice < minTotal) return false;
   if (maxTotal !== null && comparisonPrice > maxTotal) return false;
   if (rule.client_email && rule.client_email.toLowerCase() !== context.email) return false;
@@ -131,7 +130,6 @@ export async function POST(request: Request) {
     const bookingEndTime = booking_end_time ?? addMinutesToTime(booking_time, totalDuration);
     const requestedStart = timeToMinutes(booking_time);
     const requestedEnd = timeToMinutes(bookingEndTime);
-
     if (requestedEnd <= requestedStart) return NextResponse.json({ error: "Booking end time must be after the start time." }, { status: 400 });
 
     const { data: availabilityWindows, error: availabilityError } = await supabaseAdmin.from("availability").select("id,available_date,available_time,start_time,end_time,timezone").eq("site_slug", siteSlug).eq("available_date", booking_date);
@@ -156,14 +154,6 @@ export async function POST(request: Request) {
     let paymentMode = "full";
     let depositType = "percent";
     let depositValue = 0;
-    if (variationId) {
-      const { data: variation } = await supabaseAdmin.from("service_variations").select("payment_mode,deposit_type,deposit_value").eq("site_slug", siteSlug).eq("id", variationId).maybeSingle();
-      if (variation) { paymentMode = variation.payment_mode ?? "full"; depositType = variation.deposit_type ?? "percent"; depositValue = Number(variation.deposit_value ?? 0); }
-    } else {
-      const { data: service } = await supabaseAdmin.from("services").select("payment_mode,deposit_type,deposit_value").eq("site_slug", siteSlug).eq("id", serviceId).maybeSingle();
-      if (service) { paymentMode = service.payment_mode ?? "full"; depositType = service.deposit_type ?? "percent"; depositValue = Number(service.deposit_value ?? 0); }
-    }
-
     const { data: depositRules, error: depositRulesError } = await supabaseAdmin
       .from("deposit_rules")
       .select("id,rule_scope,price_basis,service_id,service_variation_id,client_email,payment_mode,deposit_type,deposit_value,min_total,max_total,priority")
@@ -172,7 +162,11 @@ export async function POST(request: Request) {
       .order("priority", { ascending: true });
     if (depositRulesError) console.error("DEPOSIT RULES ERROR:", depositRulesError);
     const matchedDepositRule = (depositRules ?? []).find((rule) => ruleMatches(rule as DepositRule, { serviceId, variationId, email: cleanCustomerEmail, servicePrice, total: totalBeforeDiscount })) as DepositRule | undefined;
-    if (matchedDepositRule) { paymentMode = matchedDepositRule.payment_mode ?? paymentMode; depositType = matchedDepositRule.deposit_type ?? depositType; depositValue = Number(matchedDepositRule.deposit_value ?? depositValue); }
+    if (matchedDepositRule) {
+      paymentMode = matchedDepositRule.payment_mode ?? "deposit";
+      depositType = matchedDepositRule.deposit_type ?? "amount";
+      depositValue = Number(matchedDepositRule.deposit_value ?? 0);
+    }
 
     const cleanDiscountCode = typeof discount_code === "string" ? discount_code.trim().toUpperCase() : "";
     let appliedDiscountCode = "";
@@ -199,15 +193,14 @@ export async function POST(request: Request) {
 
     const balanceStatus = remainingBalance > 0 ? "balance_due" : "not_applicable";
     const cleanNotes = typeof notes === "string" ? notes.trim() : "";
-    const normalizedNotes = [cleanNotes, variationId ? `Variation ID: ${variationId}` : "", addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", matchedDepositRule ? `Deposit Rule ID: ${matchedDepositRule.id}` : "", matchedDepositRule ? `Deposit Price Basis: ${matchedDepositRule.price_basis ?? "service"}` : "", appliedDiscountCode ? `Discount Code: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip Added: $${tipAmount.toFixed(2)}` : "", paymentMode === "deposit" ? `Deposit paid upfront. Remaining balance due after appointment: $${remainingBalance.toFixed(2)}` : ""].filter(Boolean).join("\n");
-
+    const normalizedNotes = [cleanNotes, variationId ? `Variation ID: ${variationId}` : "", addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", matchedDepositRule ? `Deposit Rule ID: ${matchedDepositRule.id}` : "", matchedDepositRule ? `Deposit Price Basis: ${matchedDepositRule.price_basis ?? "service"}` : "", !matchedDepositRule ? "No deposit rule matched; full payment charged." : "", appliedDiscountCode ? `Discount Code: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip Added: $${tipAmount.toFixed(2)}` : "", paymentMode === "deposit" ? `Deposit paid upfront. Remaining balance due after appointment: $${remainingBalance.toFixed(2)}` : ""].filter(Boolean).join("\n");
     const { data: booking, error: bookingError } = await supabaseAdmin.from("bookings").insert({ site_slug: siteSlug, client_id: client_id || null, crm_client_id: crmClientId, service_id: serviceId, customer_email: cleanCustomerEmail, booking_date, booking_time, booking_end_time: bookingEndTime, payment_status: "pending", status: "pending", notes: normalizedNotes, timezone, price_paid: amountDueNow, original_price: totalBeforeDiscount, discount_code: appliedDiscountCode || null, discount_amount: discountAmount, amount_due_now: amountDueNow, remaining_balance: remainingBalance, payment_mode: paymentMode, deposit_amount: depositAmount, tip_amount: tipAmount, balance_status: balanceStatus, addon_ids: selectedAddonIds, addon_total: addonTotal, deposit_rule_id: matchedDepositRule?.id ?? null, calculated_deposit: depositAmount }).select().single();
     if (bookingError || !booking) return NextResponse.json({ error: "Booking creation failed." }, { status: 500 });
 
     const siteUrl = getSiteUrl(request);
     const checkoutLabel = paymentMode === "deposit" ? `${service_name} Deposit` : service_name;
-    const descriptionParts = [addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", paymentMode === "deposit" ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}` : "", appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : ""].filter(Boolean);
-    const session = await stripe.checkout.sessions.create({ mode: "payment", customer_email: cleanCustomerEmail, payment_method_types: ["card"], line_items: [{ price_data: { currency: "usd", product_data: { name: checkoutLabel, description: descriptionParts.length > 0 ? descriptionParts.join(" · ") : undefined }, unit_amount: Math.round(amountDueNow * 100) }, quantity: 1 }], metadata: { siteSlug, bookingId: booking.id.toString(), crmClientId: crmClientId ? String(crmClientId) : "", serviceId: serviceId ? serviceId.toString() : "", variationId: variationId ? variationId.toString() : "", addonIds: selectedAddonIds.join(","), depositRuleId: matchedDepositRule?.id ? String(matchedDepositRule.id) : "", depositPriceBasis: matchedDepositRule?.price_basis ?? "service", bookingDate: booking_date, bookingTime: booking_time, bookingEndTime, servicePrice: servicePrice.toFixed(2), originalPrice: totalBeforeDiscount.toFixed(2), addonTotal: addonTotal.toFixed(2), discountCode: appliedDiscountCode, discountAmount: discountAmount.toFixed(2), depositBaseAmount: depositBaseAmount.toFixed(2), amountDueNow: amountDueNow.toFixed(2), remainingBalance: remainingBalance.toFixed(2), tipAmount: tipAmount.toFixed(2), paymentMode }, success_url: `${siteUrl}/success?bookingId=${booking.id}`, cancel_url: `${siteUrl}/cancel?bookingId=${booking.id}` });
+    const descriptionParts = [addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", paymentMode === "deposit" ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}` : "", !matchedDepositRule ? "No deposit rule matched; full payment due." : "", appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : ""].filter(Boolean);
+    const session = await stripe.checkout.sessions.create({ mode: "payment", customer_email: cleanCustomerEmail, payment_method_types: ["card"], line_items: [{ price_data: { currency: "usd", product_data: { name: checkoutLabel, description: descriptionParts.length > 0 ? descriptionParts.join(" · ") : undefined }, unit_amount: Math.round(amountDueNow * 100) }, quantity: 1 }], metadata: { siteSlug, bookingId: booking.id.toString(), crmClientId: crmClientId ? String(crmClientId) : "", serviceId: serviceId ? serviceId.toString() : "", variationId: variationId ? variationId.toString() : "", addonIds: selectedAddonIds.join(","), depositRuleId: matchedDepositRule?.id ? String(matchedDepositRule.id) : "", depositPriceBasis: matchedDepositRule?.price_basis ?? "none", bookingDate: booking_date, bookingTime: booking_time, bookingEndTime, servicePrice: servicePrice.toFixed(2), originalPrice: totalBeforeDiscount.toFixed(2), addonTotal: addonTotal.toFixed(2), discountCode: appliedDiscountCode, discountAmount: discountAmount.toFixed(2), depositBaseAmount: depositBaseAmount.toFixed(2), amountDueNow: amountDueNow.toFixed(2), remainingBalance: remainingBalance.toFixed(2), tipAmount: tipAmount.toFixed(2), paymentMode }, success_url: `${siteUrl}/success?bookingId=${booking.id}`, cancel_url: `${siteUrl}/cancel?bookingId=${booking.id}` });
     return NextResponse.json({ url: session.url });
   } catch (error) {
     console.error("CHECKOUT ERROR:", error);
