@@ -39,6 +39,13 @@ function buildAddonPayload(body: Body) {
   };
 }
 
+function buildAssignmentPayload(siteSlug: string, body: Body) {
+  const serviceId = cleanNumber(body.service_id);
+  const addonId = cleanNumber(body.addon_id);
+  if (!serviceId || !addonId) throw new Error("Service and add-on are required.");
+  return { site_slug: siteSlug, service_id: serviceId, addon_id: addonId, is_enabled: cleanBoolean(body.is_enabled, true), updated_at: new Date().toISOString() };
+}
+
 export async function GET(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
@@ -46,21 +53,11 @@ export async function GET(request: Request) {
   try {
     const siteSlug = getServerSiteSlug(request);
     const [{ data: addons, error: addonsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
-      supabaseAdmin
-        .from("service_addons")
-        .select("*")
-        .eq("site_slug", siteSlug)
-        .order("sort_order", { ascending: true })
-        .order("created_at", { ascending: false }),
-      supabaseAdmin
-        .from("service_addon_assignments")
-        .select("*")
-        .eq("site_slug", siteSlug),
+      supabaseAdmin.from("service_addons").select("*").eq("site_slug", siteSlug).order("sort_order", { ascending: true }).order("created_at", { ascending: false }),
+      supabaseAdmin.from("service_addon_assignments").select("*").eq("site_slug", siteSlug),
     ]);
-
     if (addonsError) throw addonsError;
     if (assignmentsError) throw assignmentsError;
-
     return NextResponse.json({ site_slug: siteSlug, addons: addons ?? [], assignments: assignments ?? [] });
   } catch (error) {
     console.error("LOAD SERVICE ADDONS ERROR:", error);
@@ -76,15 +73,8 @@ export async function POST(request: Request) {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
     const payload = buildAddonPayload(body);
-
-    const { data, error } = await supabaseAdmin
-      .from("service_addons")
-      .insert({ site_slug: siteSlug, ...payload })
-      .select("*")
-      .single();
-
+    const { data, error } = await supabaseAdmin.from("service_addons").insert({ site_slug: siteSlug, ...payload }).select("*").single();
     if (error) throw error;
-
     return NextResponse.json({ site_slug: siteSlug, addon: data, message: "Add-on created." });
   } catch (error) {
     console.error("CREATE SERVICE ADDON ERROR:", error);
@@ -99,20 +89,25 @@ export async function PUT(request: Request) {
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
+
+    if (Array.isArray(body.addons)) {
+      const updated = [];
+      for (const item of body.addons as Body[]) {
+        const addonId = cleanNumber(item.id);
+        if (!addonId) continue;
+        const payload = buildAddonPayload(item);
+        const { data, error } = await supabaseAdmin.from("service_addons").update(payload).eq("site_slug", siteSlug).eq("id", addonId).select("*").single();
+        if (error) throw error;
+        updated.push(data);
+      }
+      return NextResponse.json({ site_slug: siteSlug, addons: updated, message: "Add-ons saved." });
+    }
+
     const addonId = cleanNumber(body.id);
     if (!addonId) return NextResponse.json({ error: "Add-on ID is required." }, { status: 400 });
-
     const payload = buildAddonPayload(body);
-    const { data, error } = await supabaseAdmin
-      .from("service_addons")
-      .update(payload)
-      .eq("site_slug", siteSlug)
-      .eq("id", addonId)
-      .select("*")
-      .single();
-
+    const { data, error } = await supabaseAdmin.from("service_addons").update(payload).eq("site_slug", siteSlug).eq("id", addonId).select("*").single();
     if (error) throw error;
-
     return NextResponse.json({ site_slug: siteSlug, addon: data, message: "Add-on saved." });
   } catch (error) {
     console.error("SAVE SERVICE ADDON ERROR:", error);
@@ -127,29 +122,25 @@ export async function PATCH(request: Request) {
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
-    const serviceId = cleanNumber(body.service_id);
-    const addonId = cleanNumber(body.addon_id);
-    const isEnabled = cleanBoolean(body.is_enabled, true);
 
-    if (!serviceId || !addonId) {
-      return NextResponse.json({ error: "Service and add-on are required." }, { status: 400 });
+    if (Array.isArray(body.assignments)) {
+      const payloads = (body.assignments as Body[]).map((assignment) => buildAssignmentPayload(siteSlug, assignment));
+      if (payloads.length === 0) return NextResponse.json({ error: "At least one assignment is required." }, { status: 400 });
+      const { data, error } = await supabaseAdmin
+        .from("service_addon_assignments")
+        .upsert(payloads, { onConflict: "site_slug,service_id,addon_id" })
+        .select("*");
+      if (error) throw error;
+      return NextResponse.json({ site_slug: siteSlug, assignments: data ?? [], message: "Service add-on assignments saved." });
     }
 
-    const { data, error } = await supabaseAdmin
-      .from("service_addon_assignments")
-      .upsert(
-        { site_slug: siteSlug, service_id: serviceId, addon_id: addonId, is_enabled: isEnabled, updated_at: new Date().toISOString() },
-        { onConflict: "site_slug,service_id,addon_id" }
-      )
-      .select("*")
-      .single();
-
+    const payload = buildAssignmentPayload(siteSlug, body);
+    const { data, error } = await supabaseAdmin.from("service_addon_assignments").upsert(payload, { onConflict: "site_slug,service_id,addon_id" }).select("*").single();
     if (error) throw error;
-
     return NextResponse.json({ site_slug: siteSlug, assignment: data, message: "Add-on assignment saved." });
   } catch (error) {
     console.error("SAVE ADDON ASSIGNMENT ERROR:", error);
-    return NextResponse.json({ error: "Add-on assignment could not be saved." }, { status: 500 });
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Add-on assignment could not be saved." }, { status: 500 });
   }
 }
 
@@ -161,15 +152,8 @@ export async function DELETE(request: Request) {
     const siteSlug = getServerSiteSlug(request);
     const id = cleanNumber(new URL(request.url).searchParams.get("id"));
     if (!id) return NextResponse.json({ error: "Add-on ID is required." }, { status: 400 });
-
-    const { error } = await supabaseAdmin
-      .from("service_addons")
-      .delete()
-      .eq("site_slug", siteSlug)
-      .eq("id", id);
-
+    const { error } = await supabaseAdmin.from("service_addons").delete().eq("site_slug", siteSlug).eq("id", id);
     if (error) throw error;
-
     return NextResponse.json({ site_slug: siteSlug, message: "Add-on deleted." });
   } catch (error) {
     console.error("DELETE SERVICE ADDON ERROR:", error);
