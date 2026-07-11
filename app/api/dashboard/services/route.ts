@@ -21,6 +21,7 @@ function buildServicePayload(body: Body) {
   const allowQuantity = cleanBoolean(body.allow_quantity ?? body.allowQuantity, false);
   const minQuantity = positiveInteger(body.min_quantity ?? body.minQuantity, 1);
   const maxQuantity = allowQuantity ? Math.max(minQuantity, positiveInteger(body.max_quantity ?? body.maxQuantity, minQuantity)) : 1;
+  const sectionId = cleanNumber(body.section_id ?? body.sectionId, 0);
 
   if (!title || price <= 0 || duration <= 0) throw new Error("Service title, price, and duration are required.");
 
@@ -30,6 +31,7 @@ function buildServicePayload(body: Body) {
     price,
     duration,
     sort_order: cleanNumber(body.sort_order ?? body.sortOrder, 100),
+    section_id: sectionId > 0 ? sectionId : null,
     payment_mode: cleanText(body.payment_mode || body.paymentMode) || "deposit",
     deposit_type: cleanText(body.deposit_type || body.depositType) || "amount",
     deposit_value: cleanNumber(body.deposit_value ?? body.depositValue),
@@ -49,7 +51,7 @@ export async function GET(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
   try {
     const siteSlug = getServerSiteSlug(request);
-    const { data, error } = await supabaseAdmin.from("services").select("*").eq("site_slug", siteSlug).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+    const { data, error } = await supabaseAdmin.from("services").select("*").eq("site_slug", siteSlug).order("section_id", { ascending: true, nullsFirst: false }).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ site_slug: siteSlug, services: data ?? [], message: "Services loaded." });
   } catch (error) {
