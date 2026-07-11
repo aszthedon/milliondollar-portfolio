@@ -25,10 +25,7 @@ async function serviceBelongsToSite(serviceId: number, siteSlug: string) {
     .eq("id", serviceId)
     .maybeSingle();
 
-  if (error) {
-    throw error;
-  }
-
+  if (error) throw error;
   return Boolean(data?.id);
 }
 
@@ -58,7 +55,7 @@ export async function GET(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const url = new URL(request.url);
     const serviceId = cleanNumber(url.searchParams.get("service_id"));
 
@@ -68,19 +65,12 @@ export async function GET(request: Request) {
       .eq("site_slug", siteSlug)
       .order("created_at", { ascending: false });
 
-    if (serviceId) {
-      query = query.eq("service_id", serviceId);
-    }
+    if (serviceId) query = query.eq("service_id", serviceId);
 
     const { data, error } = await query;
-
     if (error) throw error;
 
-    return NextResponse.json({
-      site_slug: siteSlug,
-      variations: data ?? [],
-      message: "Service variations loaded.",
-    });
+    return NextResponse.json({ site_slug: siteSlug, variations: data ?? [], message: "Service variations loaded." });
   } catch (error) {
     console.error("LOAD SERVICE VARIATIONS ERROR:", error);
     return NextResponse.json({ error: "Service variations could not be loaded." }, { status: 500 });
@@ -92,14 +82,12 @@ export async function POST(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
     const payload = buildVariationPayload(body);
 
     const allowed = await serviceBelongsToSite(payload.service_id, siteSlug);
-    if (!allowed) {
-      return NextResponse.json({ error: "Service does not belong to this site." }, { status: 403 });
-    }
+    if (!allowed) return NextResponse.json({ error: "Service does not belong to this site." }, { status: 403 });
 
     const { data, error } = await supabaseAdmin
       .from("service_variations")
@@ -108,18 +96,10 @@ export async function POST(request: Request) {
       .single();
 
     if (error) throw error;
-
-    return NextResponse.json({
-      site_slug: siteSlug,
-      variation: data,
-      message: "Service variation created.",
-    });
+    return NextResponse.json({ site_slug: siteSlug, variation: data, message: "Service variation created." });
   } catch (error) {
     console.error("CREATE SERVICE VARIATION ERROR:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Service variation could not be created." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Service variation could not be created." }, { status: 500 });
   }
 }
 
@@ -128,19 +108,35 @@ export async function PUT(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
+    const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
+
+    if (Array.isArray(body.variations)) {
+      const saved = [];
+      for (const item of body.variations as Body[]) {
+        const variationId = cleanNumber(item.id);
+        if (!variationId) continue;
+        const payload = buildVariationPayload(item);
+        const allowed = await serviceBelongsToSite(payload.service_id, siteSlug);
+        if (!allowed) return NextResponse.json({ error: "One variation belongs to a service outside this site." }, { status: 403 });
+        const { data, error } = await supabaseAdmin
+          .from("service_variations")
+          .update(payload)
+          .eq("site_slug", siteSlug)
+          .eq("id", variationId)
+          .select("*")
+          .single();
+        if (error) throw error;
+        saved.push(data);
+      }
+      return NextResponse.json({ site_slug: siteSlug, variations: saved, message: "All variations saved." });
+    }
+
     const variationId = cleanNumber(body.id);
+    if (!variationId) return NextResponse.json({ error: "Variation ID is required." }, { status: 400 });
     const payload = buildVariationPayload(body);
-
-    if (!variationId) {
-      return NextResponse.json({ error: "Variation ID is required." }, { status: 400 });
-    }
-
     const allowed = await serviceBelongsToSite(payload.service_id, siteSlug);
-    if (!allowed) {
-      return NextResponse.json({ error: "Service does not belong to this site." }, { status: 403 });
-    }
+    if (!allowed) return NextResponse.json({ error: "Service does not belong to this site." }, { status: 403 });
 
     const { data, error } = await supabaseAdmin
       .from("service_variations")
@@ -151,18 +147,10 @@ export async function PUT(request: Request) {
       .single();
 
     if (error) throw error;
-
-    return NextResponse.json({
-      site_slug: siteSlug,
-      variation: data,
-      message: "Service variation saved.",
-    });
+    return NextResponse.json({ site_slug: siteSlug, variation: data, message: "Service variation saved." });
   } catch (error) {
     console.error("SAVE SERVICE VARIATION ERROR:", error);
-    return NextResponse.json(
-      { error: error instanceof Error ? error.message : "Service variation could not be saved." },
-      { status: 500 }
-    );
+    return NextResponse.json({ error: error instanceof Error ? error.message : "Service variation could not be saved." }, { status: 500 });
   }
 }
 
@@ -171,13 +159,9 @@ export async function DELETE(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
 
   try {
-    const siteSlug = getServerSiteSlug();
-    const url = new URL(request.url);
-    const variationId = cleanNumber(url.searchParams.get("id"));
-
-    if (!variationId) {
-      return NextResponse.json({ error: "Variation ID is required." }, { status: 400 });
-    }
+    const siteSlug = getServerSiteSlug(request);
+    const variationId = cleanNumber(new URL(request.url).searchParams.get("id"));
+    if (!variationId) return NextResponse.json({ error: "Variation ID is required." }, { status: 400 });
 
     const { error } = await supabaseAdmin
       .from("service_variations")
@@ -186,11 +170,7 @@ export async function DELETE(request: Request) {
       .eq("id", variationId);
 
     if (error) throw error;
-
-    return NextResponse.json({
-      site_slug: siteSlug,
-      message: "Service variation deleted.",
-    });
+    return NextResponse.json({ site_slug: siteSlug, message: "Service variation deleted." });
   } catch (error) {
     console.error("DELETE SERVICE VARIATION ERROR:", error);
     return NextResponse.json({ error: "Service variation could not be deleted." }, { status: 500 });
