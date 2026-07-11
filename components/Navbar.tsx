@@ -6,7 +6,6 @@ import { Menu, X } from "lucide-react";
 
 import Container from "./Container";
 import { getClientSiteSlug } from "@/lib/site/siteConfig";
-import { supabase } from "@/lib/supabase";
 
 interface NavigationLink {
   id: number;
@@ -30,17 +29,17 @@ interface SiteSettings {
 }
 
 const fallbackLinks: NavigationLink[] = [
-  { id: 1, label: "Home", href: "/#home", sort_order: 1, is_visible: true, opens_new_tab: false },
-  { id: 2, label: "Services", href: "/#services", sort_order: 2, is_visible: true, opens_new_tab: false },
-  { id: 3, label: "Book Now", href: "/#booking", sort_order: 3, is_visible: true, opens_new_tab: false },
-  { id: 4, label: "Gallery", href: "/#gallery", sort_order: 4, is_visible: true, opens_new_tab: false },
+  { id: 1, label: "Home", href: "/", sort_order: 1, is_visible: true, opens_new_tab: false },
+  { id: 2, label: "Services", href: "/services", sort_order: 2, is_visible: true, opens_new_tab: false },
+  { id: 3, label: "Booking", href: "/booking", sort_order: 3, is_visible: true, opens_new_tab: false },
+  { id: 4, label: "Gallery", href: "/gallery", sort_order: 4, is_visible: true, opens_new_tab: false },
 ];
 
 const fallbackSettings: SiteSettings = {
   business_name: "",
   navbar_brand_text: "",
   header_cta_label: "Book Now",
-  header_cta_href: "/#booking",
+  header_cta_href: "/booking",
   show_dashboard_button: true,
   show_client_portal_button: false,
   show_policies_link: true,
@@ -55,7 +54,6 @@ function isExternalLink(href: string) {
 function NavLinkItem({ link, mobile = false, onClick }: { link: NavigationLink; mobile?: boolean; onClick?: () => void }) {
   const external = isExternalLink(link.href) || link.opens_new_tab;
   const className = mobile ? "rounded-2xl px-4 py-3 text-zinc-300 transition hover:bg-white/10 hover:text-white" : "text-sm text-zinc-300 transition hover:text-white";
-
   if (external) return <a href={link.href} target={link.opens_new_tab ? "_blank" : undefined} rel={link.opens_new_tab ? "noopener noreferrer" : undefined} onClick={onClick} className={className}>{link.label}</a>;
   return <Link href={link.href} onClick={onClick} className={className}>{link.label}</Link>;
 }
@@ -68,19 +66,18 @@ export default function Navbar() {
 
   useEffect(() => {
     async function fetchHeaderData() {
-      const [navigationResponse, settingsResponse] = await Promise.all([
-        supabase
-          .from("navigation_links")
-          .select("id,label,href,sort_order,is_visible,opens_new_tab")
-          .eq("site_slug", siteSlug)
-          .eq("is_visible", true)
-          .order("sort_order", { ascending: true })
-          .order("created_at", { ascending: true }),
+      const [pagesResponse, settingsResponse] = await Promise.all([
+        fetch("/api/public/pages", { cache: "no-store" }).then((response) => response.json()).catch(() => ({})),
         fetch("/api/public/site-settings", { cache: "no-store" }).then((response) => response.json()).catch(() => ({})),
       ]);
 
-      if (navigationResponse.error) console.error("PUBLIC NAVIGATION ERROR:", navigationResponse.error);
-      if (navigationResponse.data && navigationResponse.data.length > 0) setLinks(navigationResponse.data as NavigationLink[]);
+      const pageLinks = Array.isArray(pagesResponse?.pages)
+        ? pagesResponse.pages
+            .filter((page: any) => page.show_in_header !== false)
+            .map((page: any) => ({ id: Number(page.id), label: page.title, href: `/${page.slug}`, sort_order: Number(page.sort_order ?? 100), is_visible: true, opens_new_tab: page.opens_new_tab === true }))
+        : [];
+
+      setLinks([{ id: 0, label: "Home", href: "/", sort_order: 0, is_visible: true, opens_new_tab: false }, ...(pageLinks.length > 0 ? pageLinks : fallbackLinks.filter((link) => link.href !== "/"))]);
       if (settingsResponse?.settings) setSettings({ ...fallbackSettings, ...settingsResponse.settings });
     }
 
@@ -89,7 +86,7 @@ export default function Navbar() {
 
   const brandText = settings.navbar_brand_text || settings.business_name || "Iyanla Fix My Crown";
   const ctaLabel = settings.header_cta_label || "Book Now";
-  const ctaHref = settings.header_cta_href || "/#booking";
+  const ctaHref = settings.header_cta_href || "/booking";
   const showDashboardButton = settings.show_dashboard_button ?? true;
   const showClientPortalButton = settings.show_client_portal_button ?? false;
   const showPoliciesLink = settings.show_policies_link ?? true;
@@ -112,14 +109,7 @@ export default function Navbar() {
           </div>
           <button onClick={() => setMenuOpen((current) => !current)} className="text-white md:hidden" aria-label="Toggle menu">{menuOpen ? <X size={28} /> : <Menu size={28} />}</button>
         </div>
-        {menuOpen && (
-          <div className="flex flex-col gap-2 border-t border-white/10 py-6 md:hidden">
-            {visibleLinks.map((link) => <NavLinkItem key={link.id} link={link} mobile onClick={() => setMenuOpen(false)} />)}
-            {showClientPortalButton && <Link href="/client" onClick={() => setMenuOpen(false)} className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black">Client Portal</Link>}
-            {showDashboardButton && <Link href="/dashboard" onClick={() => setMenuOpen(false)} className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black">Dashboard</Link>}
-            {showCta && (ctaIsExternal ? <a href={ctaHref} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 text-black" style={{ backgroundColor: primaryColor }}>{ctaLabel}</a> : <Link href={ctaHref} onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 text-black" style={{ backgroundColor: primaryColor }}>{ctaLabel}</Link>)}
-          </div>
-        )}
+        {menuOpen && <div className="flex flex-col gap-2 border-t border-white/10 py-6 md:hidden">{visibleLinks.map((link) => <NavLinkItem key={link.id} link={link} mobile onClick={() => setMenuOpen(false)} />)}{showClientPortalButton && <Link href="/client" onClick={() => setMenuOpen(false)} className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black">Client Portal</Link>}{showDashboardButton && <Link href="/dashboard" onClick={() => setMenuOpen(false)} className="rounded-2xl border border-white/10 px-4 py-3 text-zinc-300 transition hover:bg-white hover:text-black">Dashboard</Link>}{showCta && (ctaIsExternal ? <a href={ctaHref} target="_blank" rel="noopener noreferrer" onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 text-black" style={{ backgroundColor: primaryColor }}>{ctaLabel}</a> : <Link href={ctaHref} onClick={() => setMenuOpen(false)} className="rounded-2xl px-4 py-3 text-black" style={{ backgroundColor: primaryColor }}>{ctaLabel}</Link>)}</div>}
       </Container>
     </nav>
   );
