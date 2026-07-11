@@ -18,18 +18,10 @@ export async function GET(request: Request) {
     const siteSlug = getServerSiteSlug(request);
     const today = todayString();
 
-    const [
-      servicesResult,
-      variationsResult,
-      availabilityResult,
-      bookingsResult,
-      addonsResult,
-      assignmentsResult,
-      depositRulesResult,
-    ] = await Promise.all([
+    const [servicesResult, variationsResult, availabilityResult, bookingsResult, addonsResult, assignmentsResult, depositRulesResult] = await Promise.all([
       supabaseAdmin
         .from("services")
-        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order")
+        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order,is_recurring,recurring_interval,recurring_count,recurring_label")
         .eq("site_slug", siteSlug)
         .order("sort_order", { ascending: true })
         .order("created_at", { ascending: true }),
@@ -76,16 +68,7 @@ export async function GET(request: Request) {
     if (assignmentsResult.error) throw assignmentsResult.error;
     if (depositRulesResult.error) throw depositRulesResult.error;
 
-    return NextResponse.json({
-      site_slug: siteSlug,
-      services: servicesResult.data ?? [],
-      variations: variationsResult.data ?? [],
-      availability: availabilityResult.data ?? [],
-      bookings: bookingsResult.data ?? [],
-      addons: addonsResult.data ?? [],
-      addon_assignments: assignmentsResult.data ?? [],
-      deposit_rules: depositRulesResult.data ?? [],
-    });
+    return NextResponse.json({ site_slug: siteSlug, services: servicesResult.data ?? [], variations: variationsResult.data ?? [], availability: availabilityResult.data ?? [], bookings: bookingsResult.data ?? [], addons: addonsResult.data ?? [], addon_assignments: assignmentsResult.data ?? [], deposit_rules: depositRulesResult.data ?? [] });
   } catch (error) {
     console.error("PUBLIC BOOKING DATA API ERROR:", error);
     return NextResponse.json({ error: "Booking information could not be loaded." }, { status: 500 });
