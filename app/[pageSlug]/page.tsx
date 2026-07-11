@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { headers } from "next/headers";
 
 import Navbar from "@/components/Navbar";
 import Footer from "@/components/Footer";
@@ -8,7 +9,7 @@ import Services from "@/components/sections/Services";
 import Booking from "@/components/sections/Booking";
 import Gallery from "@/components/sections/Gallery";
 import Contact from "@/components/sections/Contact";
-import { getServerSiteSlug } from "@/lib/site/siteConfig";
+import { getSiteSlugFromHost } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +17,9 @@ export const dynamic = "force-dynamic";
 type Props = { params: Promise<{ pageSlug: string }> };
 
 async function getPage(slug: string) {
-  const siteSlug = getServerSiteSlug();
+  const headerStore = await headers();
+  const host = headerStore.get("x-forwarded-host") || headerStore.get("host") || "";
+  const siteSlug = getSiteSlugFromHost(host);
   const { data, error } = await supabaseAdmin.from("site_pages").select("*").eq("site_slug", siteSlug).eq("slug", slug).eq("status", "published").maybeSingle();
   if (error) throw error;
   return data;
