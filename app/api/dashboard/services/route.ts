@@ -51,7 +51,13 @@ export async function GET(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
   try {
     const siteSlug = getServerSiteSlug(request);
-    const { data, error } = await supabaseAdmin.from("services").select("*").eq("site_slug", siteSlug).order("section_id", { ascending: true, nullsFirst: false }).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
+    const { data, error } = await supabaseAdmin
+      .from("services")
+      .select("*")
+      .eq("site_slug", siteSlug)
+      .order("section_id", { ascending: true, nullsFirst: false })
+      .order("sort_order", { ascending: true })
+      .order("created_at", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ site_slug: siteSlug, services: data ?? [], message: "Services loaded." });
   } catch (error) {
@@ -82,6 +88,26 @@ export async function PUT(request: Request) {
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
+
+    if (Array.isArray(body.services)) {
+      const saved = [];
+      for (const item of body.services as Body[]) {
+        const serviceId = cleanNumber(item.id);
+        if (!serviceId) continue;
+        const payload = buildServicePayload(item);
+        const { data, error } = await supabaseAdmin
+          .from("services")
+          .update(payload)
+          .eq("site_slug", siteSlug)
+          .eq("id", serviceId)
+          .select("*")
+          .single();
+        if (error) throw error;
+        saved.push(data);
+      }
+      return NextResponse.json({ site_slug: siteSlug, services: saved, message: "All services saved." });
+    }
+
     const serviceId = cleanNumber(body.id);
     if (!serviceId) return NextResponse.json({ error: "Service ID is required." }, { status: 400 });
     const payload = buildServicePayload(body);
@@ -107,7 +133,10 @@ export async function PATCH(request: Request) {
     const ownedIds = new Set((ownedServices ?? []).map((service) => Number(service.id)));
     const invalidId = orderedIds.find((id) => !ownedIds.has(id));
     if (invalidId) return NextResponse.json({ error: "One service does not belong to this site." }, { status: 403 });
-    for (const [index, id] of orderedIds.entries()) { const { error } = await supabaseAdmin.from("services").update({ sort_order: (index + 1) * 10 }).eq("site_slug", siteSlug).eq("id", id); if (error) throw error; }
+    for (const [index, id] of orderedIds.entries()) {
+      const { error } = await supabaseAdmin.from("services").update({ sort_order: (index + 1) * 10 }).eq("site_slug", siteSlug).eq("id", id);
+      if (error) throw error;
+    }
     return NextResponse.json({ site_slug: siteSlug, message: "Service order saved." });
   } catch (error) {
     console.error("REORDER DASHBOARD SERVICES ERROR:", error);
