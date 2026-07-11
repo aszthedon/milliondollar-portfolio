@@ -8,22 +8,17 @@ export const dynamic = "force-dynamic";
 
 type Body = Record<string, unknown>;
 
-function cleanText(value: unknown) {
-  return String(value ?? "").trim();
-}
-
-function cleanNumber(value: unknown, fallback = 0) {
-  const number = Number(value ?? fallback);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function cleanBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
+function cleanText(value: unknown) { return String(value ?? "").trim(); }
+function cleanNumber(value: unknown, fallback = 0) { const number = Number(value ?? fallback); return Number.isFinite(number) ? number : fallback; }
+function cleanBoolean(value: unknown, fallback: boolean) { return typeof value === "boolean" ? value : fallback; }
+function positiveInteger(value: unknown, fallback = 1) { return Math.max(1, Math.floor(cleanNumber(value, fallback))); }
 
 function buildAddonPayload(body: Body) {
   const name = cleanText(body.name);
   if (!name) throw new Error("Add-on name is required.");
+  const allowQuantity = cleanBoolean(body.allow_quantity ?? body.allowQuantity, false);
+  const minQuantity = positiveInteger(body.min_quantity ?? body.minQuantity, 1);
+  const maxQuantity = allowQuantity ? Math.max(minQuantity, positiveInteger(body.max_quantity ?? body.maxQuantity, minQuantity)) : 1;
 
   return {
     name,
@@ -35,6 +30,10 @@ function buildAddonPayload(body: Body) {
     deposit_value: body.deposit_value === null || body.deposit_value === "" ? null : cleanNumber(body.deposit_value),
     is_active: cleanBoolean(body.is_active, true),
     sort_order: cleanNumber(body.sort_order, 100),
+    allow_quantity: allowQuantity,
+    min_quantity: allowQuantity ? minQuantity : 1,
+    max_quantity: maxQuantity,
+    quantity_label: cleanText(body.quantity_label ?? body.quantityLabel) || "Quantity",
     updated_at: new Date().toISOString(),
   };
 }
@@ -49,7 +48,6 @@ function buildAssignmentPayload(siteSlug: string, body: Body) {
 export async function GET(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const [{ data: addons, error: addonsError }, { data: assignments, error: assignmentsError }] = await Promise.all([
@@ -68,7 +66,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
@@ -85,11 +82,9 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
-
     if (Array.isArray(body.addons)) {
       const updated = [];
       for (const item of body.addons as Body[]) {
@@ -102,7 +97,6 @@ export async function PUT(request: Request) {
       }
       return NextResponse.json({ site_slug: siteSlug, addons: updated, message: "Add-ons saved." });
     }
-
     const addonId = cleanNumber(body.id);
     if (!addonId) return NextResponse.json({ error: "Add-on ID is required." }, { status: 400 });
     const payload = buildAddonPayload(body);
@@ -118,22 +112,16 @@ export async function PUT(request: Request) {
 export async function PATCH(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
-
     if (Array.isArray(body.assignments)) {
       const payloads = (body.assignments as Body[]).map((assignment) => buildAssignmentPayload(siteSlug, assignment));
       if (payloads.length === 0) return NextResponse.json({ error: "At least one assignment is required." }, { status: 400 });
-      const { data, error } = await supabaseAdmin
-        .from("service_addon_assignments")
-        .upsert(payloads, { onConflict: "site_slug,service_id,addon_id" })
-        .select("*");
+      const { data, error } = await supabaseAdmin.from("service_addon_assignments").upsert(payloads, { onConflict: "site_slug,service_id,addon_id" }).select("*");
       if (error) throw error;
       return NextResponse.json({ site_slug: siteSlug, assignments: data ?? [], message: "Service add-on assignments saved." });
     }
-
     const payload = buildAssignmentPayload(siteSlug, body);
     const { data, error } = await supabaseAdmin.from("service_addon_assignments").upsert(payload, { onConflict: "site_slug,service_id,addon_id" }).select("*").single();
     if (error) throw error;
@@ -147,7 +135,6 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const id = cleanNumber(new URL(request.url).searchParams.get("id"));
