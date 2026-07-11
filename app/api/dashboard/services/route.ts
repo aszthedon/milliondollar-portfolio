@@ -22,6 +22,7 @@ function buildServicePayload(body: Body) {
   const minQuantity = positiveInteger(body.min_quantity ?? body.minQuantity, 1);
   const maxQuantity = allowQuantity ? Math.max(minQuantity, positiveInteger(body.max_quantity ?? body.maxQuantity, minQuantity)) : 1;
   const sectionId = cleanNumber(body.section_id ?? body.sectionId, 0);
+  const imageUrl = cleanText(body.image_url ?? body.imageUrl);
 
   if (!title || price <= 0 || duration <= 0) throw new Error("Service title, price, and duration are required.");
 
@@ -43,6 +44,9 @@ function buildServicePayload(body: Body) {
     min_quantity: allowQuantity ? minQuantity : 1,
     max_quantity: maxQuantity,
     quantity_label: cleanText(body.quantity_label ?? body.quantityLabel) || "Quantity",
+    image_url: imageUrl || null,
+    image_alt_text: imageUrl ? cleanText(body.image_alt_text ?? body.imageAltText) || title : null,
+    show_in_gallery: cleanBoolean(body.show_in_gallery ?? body.showInGallery, true),
   };
 }
 
@@ -51,13 +55,7 @@ export async function GET(request: Request) {
   if (unauthorizedResponse) return unauthorizedResponse;
   try {
     const siteSlug = getServerSiteSlug(request);
-    const { data, error } = await supabaseAdmin
-      .from("services")
-      .select("*")
-      .eq("site_slug", siteSlug)
-      .order("section_id", { ascending: true, nullsFirst: false })
-      .order("sort_order", { ascending: true })
-      .order("created_at", { ascending: true });
+    const { data, error } = await supabaseAdmin.from("services").select("*").eq("site_slug", siteSlug).order("section_id", { ascending: true, nullsFirst: false }).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
     if (error) throw error;
     return NextResponse.json({ site_slug: siteSlug, services: data ?? [], message: "Services loaded." });
   } catch (error) {
@@ -95,13 +93,7 @@ export async function PUT(request: Request) {
         const serviceId = cleanNumber(item.id);
         if (!serviceId) continue;
         const payload = buildServicePayload(item);
-        const { data, error } = await supabaseAdmin
-          .from("services")
-          .update(payload)
-          .eq("site_slug", siteSlug)
-          .eq("id", serviceId)
-          .select("*")
-          .single();
+        const { data, error } = await supabaseAdmin.from("services").update(payload).eq("site_slug", siteSlug).eq("id", serviceId).select("*").single();
         if (error) throw error;
         saved.push(data);
       }
