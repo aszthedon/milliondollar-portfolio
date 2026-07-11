@@ -8,28 +8,21 @@ export const dynamic = "force-dynamic";
 
 type Body = Record<string, unknown>;
 
-function cleanText(value: unknown) {
-  return String(value ?? "").trim();
-}
-
-function cleanNumber(value: unknown, fallback = 0) {
-  const number = Number(value ?? fallback);
-  return Number.isFinite(number) ? number : fallback;
-}
-
-function cleanBoolean(value: unknown, fallback: boolean) {
-  return typeof value === "boolean" ? value : fallback;
-}
+function cleanText(value: unknown) { return String(value ?? "").trim(); }
+function cleanNumber(value: unknown, fallback = 0) { const number = Number(value ?? fallback); return Number.isFinite(number) ? number : fallback; }
+function cleanBoolean(value: unknown, fallback: boolean) { return typeof value === "boolean" ? value : fallback; }
+function positiveInteger(value: unknown, fallback = 1) { return Math.max(1, Math.floor(cleanNumber(value, fallback))); }
 
 function buildServicePayload(body: Body) {
   const title = cleanText(body.title);
   const price = cleanNumber(body.price);
   const duration = cleanNumber(body.duration, 60);
   const isRecurring = cleanBoolean(body.is_recurring ?? body.isRecurring, false);
+  const allowQuantity = cleanBoolean(body.allow_quantity ?? body.allowQuantity, false);
+  const minQuantity = positiveInteger(body.min_quantity ?? body.minQuantity, 1);
+  const maxQuantity = allowQuantity ? Math.max(minQuantity, positiveInteger(body.max_quantity ?? body.maxQuantity, minQuantity)) : 1;
 
-  if (!title || price <= 0 || duration <= 0) {
-    throw new Error("Service title, price, and duration are required.");
-  }
+  if (!title || price <= 0 || duration <= 0) throw new Error("Service title, price, and duration are required.");
 
   return {
     title,
@@ -44,13 +37,16 @@ function buildServicePayload(body: Body) {
     recurring_interval: isRecurring ? cleanText(body.recurring_interval ?? body.recurringInterval) || "weekly" : null,
     recurring_count: isRecurring ? cleanNumber(body.recurring_count ?? body.recurringCount, 4) : null,
     recurring_label: isRecurring ? cleanText(body.recurring_label ?? body.recurringLabel) || "Recurring service" : null,
+    allow_quantity: allowQuantity,
+    min_quantity: allowQuantity ? minQuantity : 1,
+    max_quantity: maxQuantity,
+    quantity_label: cleanText(body.quantity_label ?? body.quantityLabel) || "Quantity",
   };
 }
 
 export async function GET(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const { data, error } = await supabaseAdmin.from("services").select("*").eq("site_slug", siteSlug).order("sort_order", { ascending: true }).order("created_at", { ascending: true });
@@ -65,7 +61,6 @@ export async function GET(request: Request) {
 export async function POST(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
@@ -82,7 +77,6 @@ export async function POST(request: Request) {
 export async function PUT(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
@@ -101,7 +95,6 @@ export async function PUT(request: Request) {
 export async function PATCH(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const body = (await request.json().catch(() => ({}))) as Body;
@@ -112,10 +105,7 @@ export async function PATCH(request: Request) {
     const ownedIds = new Set((ownedServices ?? []).map((service) => Number(service.id)));
     const invalidId = orderedIds.find((id) => !ownedIds.has(id));
     if (invalidId) return NextResponse.json({ error: "One service does not belong to this site." }, { status: 403 });
-    for (const [index, id] of orderedIds.entries()) {
-      const { error } = await supabaseAdmin.from("services").update({ sort_order: (index + 1) * 10 }).eq("site_slug", siteSlug).eq("id", id);
-      if (error) throw error;
-    }
+    for (const [index, id] of orderedIds.entries()) { const { error } = await supabaseAdmin.from("services").update({ sort_order: (index + 1) * 10 }).eq("site_slug", siteSlug).eq("id", id); if (error) throw error; }
     return NextResponse.json({ site_slug: siteSlug, message: "Service order saved." });
   } catch (error) {
     console.error("REORDER DASHBOARD SERVICES ERROR:", error);
@@ -126,7 +116,6 @@ export async function PATCH(request: Request) {
 export async function DELETE(request: Request) {
   const unauthorizedResponse = requireAdminRequest(request);
   if (unauthorizedResponse) return unauthorizedResponse;
-
   try {
     const siteSlug = getServerSiteSlug(request);
     const id = cleanNumber(new URL(request.url).searchParams.get("id"));
