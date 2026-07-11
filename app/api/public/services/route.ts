@@ -12,7 +12,7 @@ export async function GET(request: Request) {
     const [{ data: services, error: servicesError }, { data: settings, error: settingsError }] = await Promise.all([
       supabaseAdmin
         .from("services")
-        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order,section_id,is_recurring,recurring_interval,recurring_count,recurring_label,allow_quantity,min_quantity,max_quantity,quantity_label")
+        .select("id,title,description,price,duration,payment_mode,deposit_type,deposit_value,sort_order,section_id,is_recurring,recurring_interval,recurring_count,recurring_label,allow_quantity,min_quantity,max_quantity,quantity_label,image_url,image_alt_text,show_in_gallery")
         .eq("site_slug", siteSlug)
         .order("section_id", { ascending: true, nullsFirst: false })
         .order("sort_order", { ascending: true })
