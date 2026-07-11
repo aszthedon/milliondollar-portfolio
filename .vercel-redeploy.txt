@@ -1,0 +1,2 @@
+Redeploy trigger for service manager bulk save buttons.
+Commit purpose: force Vercel to rebuild the latest main branch after prior build-rate-limit failures.
