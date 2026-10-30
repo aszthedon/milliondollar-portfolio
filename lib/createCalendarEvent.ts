@@ -1,6 +1,7 @@
-import { calendar } from "./google";
+import { google } from "googleapis";
 
 interface CreateEventProps {
+  siteSlug?: string;
   customerEmail: string;
   bookingDate: string;
   bookingTime: string;
@@ -9,6 +10,7 @@ interface CreateEventProps {
 }
 
 export async function createCalendarEvent({
+  siteSlug,
   customerEmail,
   bookingDate,
   bookingTime,
@@ -18,79 +20,24 @@ export async function createCalendarEvent({
 
   try {
 
-    const [
-      startHour,
-      startMinute,
-    ] =
-      bookingTime.split(
-        ":"
-      );
-
-    const [
-      endHour,
-      endMinute,
-    ] =
-      bookingEndTime.split(
-        ":"
-      );
-
-    const startDate =
-      new Date(
-        Number(
-          bookingDate.split(
-            "-"
-          )[0]
-        ),
-
-        Number(
-          bookingDate.split(
-            "-"
-          )[1]
-        ) - 1,
-
-        Number(
-          bookingDate.split(
-            "-"
-          )[2]
-        ),
-
-        Number(
-          startHour
-        ),
-
-        Number(
-          startMinute
-        )
-      );
-
-    const endDate =
-      new Date(
-        Number(
-          bookingDate.split(
-            "-"
-          )[0]
-        ),
-
-        Number(
-          bookingDate.split(
-            "-"
-          )[1]
-        ) - 1,
-
-        Number(
-          bookingDate.split(
-            "-"
-          )[2]
-        ),
-
-        Number(
-          endHour
-        ),
-
-        Number(
-          endMinute
-        )
-      );
+    // The named site must use its own refresh token, never the MDT calendar token.
+    const refreshToken = siteSlug === "fix-my-crown"
+      ? process.env.GOOGLE_FIX_MY_CROWN_REFRESH_TOKEN
+      : process.env.GOOGLE_REFRESH_TOKEN;
+    if (!refreshToken) {
+      console.error("Google Calendar is not connected for site:", siteSlug);
+      return { meetingLink: null, calendarEventId: null };
+    }
+    const oauth = new google.auth.OAuth2(
+      process.env.GOOGLE_CLIENT_ID,
+      process.env.GOOGLE_CLIENT_SECRET
+    );
+    oauth.setCredentials({ refresh_token: refreshToken });
+    const calendar = google.calendar({ version: "v3", auth: oauth });
+    // Use local clock times and an explicit IANA timezone. Creating a Date here
+    // would silently apply the server's timezone instead of the booking's.
+    const startDateTime = `${bookingDate}T${bookingTime.slice(0, 5)}:00`;
+    const endDateTime = `${bookingDate}T${bookingEndTime.slice(0, 5)}:00`;
 
     const event =
       await calendar
@@ -114,14 +61,7 @@ export async function createCalendarEvent({
             start: {
 
               dateTime:
-                startDate
-                  .toLocaleString(
-                    "sv-SE"
-                  )
-                  .replace(
-                    " ",
-                    "T"
-                  ),
+                startDateTime,
 
               timeZone:
                 timezone,
@@ -130,14 +70,7 @@ export async function createCalendarEvent({
             end: {
 
               dateTime:
-                endDate
-                  .toLocaleString(
-                    "sv-SE"
-                  )
-                  .replace(
-                    " ",
-                    "T"
-                  ),
+                endDateTime,
 
               timeZone:
                 timezone,
