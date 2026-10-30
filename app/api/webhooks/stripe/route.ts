@@ -225,6 +225,7 @@ async function handleBookingCheckoutCompleted(
 
   if (!meetingLink || !calendarEventId) {
     const calendarResult = await createCalendarEvent({
+      siteSlug: booking.site_slug ?? session.metadata?.siteSlug,
       customerEmail: booking.customer_email,
       bookingDate: booking.booking_date,
       bookingTime: booking.booking_time,
