@@ -172,9 +172,8 @@ async function handleBookingCheckoutCompleted(
     booking.payment_status === "paid" &&
     booking.status === "confirmed";
 
-  const alreadyHasCalendarEvent = Boolean(
-    booking.meeting_link && booking.calendar_event_id
-  );
+  // A Google event can exist even if Meet did not return a link.
+  const alreadyHasCalendarEvent = Boolean(booking.calendar_event_id);
 
   if (wasAlreadyConfirmed && alreadyHasCalendarEvent) {
     console.log(
@@ -223,8 +222,9 @@ async function handleBookingCheckoutCompleted(
   let calendarEventId: string | null =
     booking.calendar_event_id ?? null;
 
-  if (!meetingLink || !calendarEventId) {
+  if (!calendarEventId) {
     const calendarResult = await createCalendarEvent({
+      siteSlug: booking.site_slug ?? session.metadata?.siteSlug,
       customerEmail: booking.customer_email,
       bookingDate: booking.booking_date,
       bookingTime: booking.booking_time,

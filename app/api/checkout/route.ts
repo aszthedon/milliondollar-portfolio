@@ -3,6 +3,7 @@ import Stripe from "stripe";
 
 import { getServerSiteSlug } from "@/lib/site/siteConfig";
 import { supabaseAdmin } from "@/lib/supabase-admin";
+import { createCalendarEvent } from "@/lib/createCalendarEvent";
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY!, { apiVersion: "2026-04-22.dahlia" });
 
@@ -10,7 +11,14 @@ type DepositRule = { id: number; rule_scope: string | null; price_basis: string 
 type AddonRow = { id: number; name: string; price: number | null; duration: number | null; allow_quantity: boolean | null; min_quantity: number | null; max_quantity: number | null; quantity_label: string | null };
 type ServiceQuantityRow = { allow_quantity: boolean | null; min_quantity: number | null; max_quantity: number | null; quantity_label: string | null };
 
-function getSiteUrl(request: Request) { return (process.env.NEXT_PUBLIC_SITE_URL ?? request.headers.get("origin") ?? "http://localhost:3000").replace(/\/$/, ""); }
+function getSiteUrl(request: Request) {
+  // Multi-site deployments must send clients back to their own site's origin.
+  const hostname = (request.headers.get("x-forwarded-host") ?? request.headers.get("host") ?? "").split(":")[0].toLowerCase();
+  if (hostname === "iyanlafixmycrown.com" || hostname === "www.iyanlafixmycrown.com") {
+    return `https://${hostname}`;
+  }
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? request.headers.get("origin") ?? "http://localhost:3000").replace(/\/$/, "");
+}
 function timeToMinutes(time: string) { const [h, m] = time.split(":"); return Number(h) * 60 + Number(m ?? "0"); }
 function minutesToTime(minutes: number) { const hours = Math.floor(minutes / 60) % 24; const mins = minutes % 60; return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`; }
 function addMinutesToTime(time: string, minutesToAdd: number) { return minutesToTime(timeToMinutes(time) + minutesToAdd); }
@@ -119,7 +127,32 @@ export async function POST(request: Request) {
     if (bookingError || !booking) return NextResponse.json({ error: "Booking creation failed." }, { status: 500 });
 
     const siteUrl = getSiteUrl(request);
-    if (paymentMode === "pay_later" && amountDueNow <= 0) return NextResponse.json({ url: `${siteUrl}/success?bookingId=${booking.id}&payment=pay_later` });
+    if (paymentMode === "pay_later" && amountDueNow <= 0) {
+      // Pay-later has no Stripe webhook: create its calendar event at booking time.
+      // The booking remains unpaid; calendar failure does not silently convert it to paid.
+      const calendarResult = await createCalendarEvent({
+        siteSlug,
+        customerEmail: cleanCustomerEmail,
+        bookingDate: booking_date,
+        bookingTime: booking_time,
+        bookingEndTime,
+        timezone,
+      });
+      if (calendarResult.calendarEventId) {
+        const { error: calendarUpdateError } = await supabaseAdmin
+          .from("bookings")
+          .update({
+            calendar_event_id: calendarResult.calendarEventId,
+            meeting_link: calendarResult.meetingLink,
+          })
+          .eq("id", booking.id)
+          .eq("site_slug", siteSlug);
+        if (calendarUpdateError) {
+          console.error("PAY LATER CALENDAR SAVE ERROR:", calendarUpdateError);
+        }
+      }
+      return NextResponse.json({ url: `${siteUrl}/success?bookingId=${booking.id}&payment=pay_later` });
+    }
     if (amountDueNow <= 0) return NextResponse.json({ error: "Checkout amount must be greater than $0." }, { status: 400 });
     const checkoutLabel = paymentMode === "deposit" ? `${serviceLabel} Deposit` : serviceLabel;
     const descriptionParts = [serviceQuantity > 1 ? `Service quantity: ${serviceQuantity}` : "", addonLabels.length ? `Add-ons: ${addonLabels.join(", ")}` : "", paymentMode === "deposit" ? `Deposit payment. Remaining balance: $${remainingBalance.toFixed(2)}` : "", paymentMode === "full" ? "Full payment due now." : "", appliedDiscountCode ? `Discount applied: ${appliedDiscountCode}` : "", tipAmount > 0 ? `Tip included: $${tipAmount.toFixed(2)}` : ""].filter(Boolean);
