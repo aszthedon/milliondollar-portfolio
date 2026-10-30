@@ -16,7 +16,7 @@ function getSiteUrl(request: Request) {
   if (hostname === "iyanlafixmycrown.com" || hostname === "www.iyanlafixmycrown.com") {
     return `https://${hostname}`;
   }
-  return (process.env.NEXT_PUBLIC_SITE_URL ?? request.headers.get("origin") ?? "http://localhost:3000").replace(/\\/$/, "");
+  return (process.env.NEXT_PUBLIC_SITE_URL ?? request.headers.get("origin") ?? "http://localhost:3000").replace(/\/$/, "");
 }
 function timeToMinutes(time: string) { const [h, m] = time.split(":"); return Number(h) * 60 + Number(m ?? "0"); }
 function minutesToTime(minutes: number) { const hours = Math.floor(minutes / 60) % 24; const mins = minutes % 60; return `${String(hours).padStart(2, "0")}:${String(mins).padStart(2, "0")}`; }
